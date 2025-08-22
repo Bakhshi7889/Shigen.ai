@@ -1,0 +1,40 @@
+{
+  "short_name": "SHIGEN Chat",
+  "name": "SHIGEN-Style Pollinations Chat",
+  "description": "A responsive, SHIGEN-style chatbot that exclusively uses the Pollinations.AI API for all text and image generation. Features include model selection, chat history, and a modern, clean UI.",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#131314",
+  "background_color": "#131314"
+}
