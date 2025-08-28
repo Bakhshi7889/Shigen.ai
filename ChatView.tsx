@@ -1,34 +1,34 @@
 
-
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import type { ChatSession, Message as MessageType, ImageContent, ViewerImage, RefineOption, Persona } from '../types';
+import type { ChatSession, Message as MessageType, ImageContent, AudioContent, ViewerImage, RefineOption } from '../types';
+import MenuIcon from './icons/MenuIcon';
 import TuneIcon from './icons/TuneIcon';
 import SendIcon from './icons/SendIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
 import CloseIcon from './icons/CloseIcon';
 import ImageIcon from './icons/ImageIcon';
+import StarIcon from './icons/StarIcon';
+import SpeakerIcon from './icons/SpeakerIcon';
 import ImageWithLoader from './ImageWithLoader';
 import { triggerHapticFeedback } from '../lib/haptics';
 import UserIcon from './icons/UserIcon';
 import { extractPotentialImagePrompt } from '../services/pollinations';
 import MessageMenu from './MessageMenu';
 import EllipsisHorizontalIcon from './icons/EllipsisHorizontalIcon';
-import SpeakerIcon from './icons/SpeakerIcon';
 import PlayIcon from './icons/PlayIcon';
 import PauseIcon from './icons/PauseIcon';
 
 interface ChatViewProps {
   chatSession: ChatSession | undefined;
-  activePersona: Persona | null;
   onSendMessage: (prompt: string, options: { imageToEdit?: ImageContent, numImages?: number }) => void;
   onOpenSidebar: () => void;
-  onOpenChatSettings: () => void;
+  onOpenInstructionEditor: () => void;
   isGenerating: boolean;
   onCancel: () => void;
   onImageSelect: (imageContent: ImageContent | null) => void;
   selectedImage: ImageContent | null;
-  onToggleFavorite: (message: MessageType) => void;
+  onToggleFavorite: (messageId: string) => void;
   onContinue: (messageId: string) => void;
   onRefine: (messageId: string, option: RefineOption) => void;
   onShare: (messageId: string) => void;
@@ -45,21 +45,12 @@ interface ChatViewProps {
 
 const BlinkingCursor: React.FC = () => <span className="inline-block w-2 h-5 bg-primary animate-pulse ml-1" />;
 
-const TextSkeletonLoader: React.FC = () => (
-  <div className="space-y-2.5 animate-pulse w-48">
-    <div className="h-4 bg-surface-variant rounded-full w-3/4"></div>
-    <div className="h-4 bg-surface-variant rounded-full w-full"></div>
-    <div className="h-4 bg-surface-variant rounded-full w-5/6"></div>
-  </div>
-);
-
 const ImageLoadingPlaceholder: React.FC<{ numImages: number }> = ({ numImages }) => {
     return (
         <div className={`grid gap-2.5 ${numImages > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
             {Array.from({ length: numImages }).map((_, index) => (
-                <div key={index} className="bg-surface-variant rounded-xl aspect-square w-full shimmer flex flex-col items-center justify-center text-center p-4">
+                <div key={index} className="bg-surface-variant rounded-xl aspect-square w-full shimmer flex items-center justify-center">
                     <SparklesIcon className="w-10 h-10 text-primary/40 animate-pulse-slow" />
-                    <p className="text-xs mt-2 text-on-surface-variant/80 font-semibold animate-pulse">Creating masterpiece...</p>
                 </div>
             ))}
         </div>
@@ -73,20 +64,18 @@ const Message: React.FC<{
     onImageSelect: (imageContent: ImageContent | null) => void,
     selectedImage: ImageContent | null,
     onOpenViewer: (clickedUrl: string) => void;
+    onGenerateAudioForMessage: (messageId: string) => void;
     onGenerateImageFromPrompt: (prompt: string, numImages: number) => void;
     customUserDp: string | null;
-    persona: Persona | null;
     onShowMenu: (messageId: string) => void;
-    activeMessageMenu: string | null;
-    onGenerateAudioForMessage: (messageId: string) => void;
     onToggleAudio: (messageId: string, audioUrl: string) => void;
     currentlyPlayingMessageId: string | null;
     isAudioPlaying: boolean;
+    activeMessageMenu: string | null;
 }> = ({ 
     message, isGenerating, isLastMessage, onImageSelect, selectedImage, 
-    onOpenViewer, onGenerateImageFromPrompt, customUserDp,
-    persona, onShowMenu, activeMessageMenu,
-    onGenerateAudioForMessage, onToggleAudio, currentlyPlayingMessageId, isAudioPlaying
+    onOpenViewer, onGenerateAudioForMessage, onGenerateImageFromPrompt, customUserDp,
+    onShowMenu, onToggleAudio, currentlyPlayingMessageId, isAudioPlaying, activeMessageMenu
 }) => {
     const isUser = message.role === 'user';
     const isBotText = !isUser && message.type === 'text';
@@ -125,9 +114,9 @@ const Message: React.FC<{
                     const numImages = parseInt(loadingContent.split('::')[1], 10) || 1;
                     return <ImageLoadingPlaceholder numImages={numImages} />;
                 }
-                return <TextSkeletonLoader />;
+                return <div className="flex items-center gap-2"><SpinnerIcon className="w-5 h-5" /><span>{loadingContent || 'Generating...'}</span></div>;
+            case 'audio': return null;
             case 'error': return <p className="text-red-400">{message.content as string}</p>;
-            case 'audio': return null; // Audio messages are handled as part of text messages
             case 'text':
             default:
                 const content = message.content as string;
@@ -135,11 +124,11 @@ const Message: React.FC<{
                 const parts = content.split(imageUrlRegex);
                 const hasImageLinks = content.match(imageUrlRegex);
                 const showGenerateButton = isBotText && !isGenerating && !!extractedPrompt && !hasImageLinks;
-
+                
                 const isThisAudioPlaying = currentlyPlayingMessageId === message.id && isAudioPlaying;
                 const showAudioControls = isBotText && (message.isGeneratingAudio || message.audioUrl);
-                const showListenButton = isBotText && !showAudioControls && content.length > 0;
-                
+                const showListenButton = isBotText && !showAudioControls;
+
                 return (
                    <div>
                         {parts.map((part, index) => {
@@ -151,7 +140,7 @@ const Message: React.FC<{
                         
                          <div className="flex flex-wrap gap-2 mt-3">
                             {showGenerateButton && extractedPrompt && (
-                                <button onClick={() => onGenerateImageFromPrompt(extractedPrompt, 4)} className="flex items-center gap-2 text-sm px-4 py-2 bg-primary text-on-primary rounded-full transition-all hover:opacity-90 active:scale-95 group-hover:animate-subtle-bounce shadow-md hover:shadow-lg card-3d-effect">
+                                <button onClick={() => onGenerateImageFromPrompt(extractedPrompt, 4)} className="flex items-center gap-2 text-sm px-4 py-2 bg-primary text-on-primary rounded-full transition-all hover:opacity-90 active:scale-95 group-hover:animate-subtle-bounce shadow-md hover:shadow-lg">
                                    <ImageIcon className="w-5 h-5" />
                                    <span>Generate with this prompt</span>
                                 </button>
@@ -186,12 +175,12 @@ const Message: React.FC<{
     return (
         <div className={`flex items-start gap-3 w-full animate-message-in ${isUser ? 'justify-end' : 'justify-start'}`}>
             {!isUser && (
-                 <div className="w-8 h-8 rounded-full bg-primary flex-shrink-0 flex items-center justify-center shadow-sm overflow-hidden">
-                    {persona?.avatarUrl ? <img src={persona.avatarUrl} alt={persona.name} className="w-full h-full object-cover" /> : <SparklesIcon className="w-5 h-5 text-on-primary" />}
+                 <div className="w-8 h-8 rounded-full bg-primary flex-shrink-0 flex items-center justify-center shadow-sm">
+                    <SparklesIcon className="w-5 h-5 text-on-primary" />
                  </div>
             )}
             <div className={`relative group ${isMediaMessage ? 'w-full' : ''}`}>
-                <div className={`rounded-3xl ${isMediaMessage ? '' : 'p-3'} ${isUser ? 'bg-primary-container text-on-primary-container rounded-br-lg' : isMediaMessage ? 'bg-transparent' : 'bg-surface text-on-surface rounded-bl-lg'}`}>
+                <div className={`rounded-2xl ${isMediaMessage ? '' : 'p-3'} ${isUser ? 'bg-primary-container text-on-primary-container rounded-br-lg' : isMediaMessage ? 'bg-transparent' : 'bg-surface text-on-surface rounded-bl-lg'}`}>
                     {renderContent()}
                 </div>
                 {!isMediaMessage && activeMessageMenu !== message.id && (
@@ -213,22 +202,37 @@ const Message: React.FC<{
     );
 };
 
-const EmptyState: React.FC<{ onSuggestionClick: (prompt: string) => void, persona: Persona | null }> = ({ onSuggestionClick, persona }) => (
-    <div className="flex flex-col items-center justify-center text-center h-full px-4 text-on-surface-variant">
-        <div className="w-16 h-16 rounded-full bg-primary mb-4 flex items-center justify-center overflow-hidden">
-             {persona?.avatarUrl ? <img src={persona.avatarUrl} alt={persona.name} className="w-full h-full object-cover" /> : <SparklesIcon className="w-10 h-10 text-on-primary" />}
+const SuggestionPills: React.FC<{ onSuggestionClick: (prompt: string) => void }> = ({ onSuggestionClick }) => {
+    const suggestions = [ "Explain quantum computing", "Creative story ideas", "How do I make a website?", "What's for dinner?" ];
+    return (
+        <div className="flex-shrink-0 flex items-center gap-2 overflow-x-auto pb-3 -mt-1 px-4">
+            {suggestions.map(s => (
+                <button 
+                    key={s} 
+                    onClick={() => onSuggestionClick(s)}
+                    className="flex-shrink-0 px-4 py-2 bg-surface border border-outline rounded-full text-sm text-on-surface-variant hover:bg-surface-variant hover:text-on-surface transition-colors active:scale-95"
+                >
+                    {s}
+                </button>
+            ))}
         </div>
+    );
+};
+
+const EmptyState: React.FC<{ onSuggestionClick: (prompt: string) => void }> = ({ onSuggestionClick }) => (
+    <div className="flex flex-col items-center justify-center text-center h-full px-4 text-on-surface-variant">
+        <SparklesIcon className="w-16 h-16 text-primary mb-4" />
         <h2 className="text-2xl font-bold text-on-surface mb-2">How can I help you today?</h2>
         <div className="w-full max-w-sm flex flex-col gap-3 mt-6">
-            <button onClick={() => onSuggestionClick('Write a poem about the ocean.')} className="w-full p-4 bg-surface rounded-3xl text-left text-sm hover:bg-surface-variant border border-outline transition card-3d-effect">
+            <button onClick={() => onSuggestionClick('Write a poem about the ocean.')} className="w-full p-4 bg-surface rounded-3xl text-left text-sm hover:bg-surface-variant border border-outline transition">
                 <p className="font-semibold text-on-surface">Write a poem</p>
                 <p className="text-on-surface-variant">about the ocean's mysteries.</p>
             </button>
-             <button onClick={() => onSuggestionClick('Explain the theory of relativity in simple terms.')} className="w-full p-4 bg-surface rounded-3xl text-left text-sm hover:bg-surface-variant border border-outline transition card-3d-effect">
+             <button onClick={() => onSuggestionClick('Explain the theory of relativity in simple terms.')} className="w-full p-4 bg-surface rounded-3xl text-left text-sm hover:bg-surface-variant border border-outline transition">
                 <p className="font-semibold text-on-surface">Explain a concept</p>
                 <p className="text-on-surface-variant">like the theory of relativity.</p>
             </button>
-             <button onClick={() => onSuggestionClick('Give me ideas for a healthy dinner.')} className="w-full p-4 bg-surface rounded-3xl text-left text-sm hover:bg-surface-variant border border-outline transition card-3d-effect">
+             <button onClick={() => onSuggestionClick('Give me ideas for a healthy dinner.')} className="w-full p-4 bg-surface rounded-3xl text-left text-sm hover:bg-surface-variant border border-outline transition">
                 <p className="font-semibold text-on-surface">Get inspired</p>
                 <p className="text-on-surface-variant">with ideas for a healthy dinner.</p>
             </button>
@@ -236,7 +240,7 @@ const EmptyState: React.FC<{ onSuggestionClick: (prompt: string) => void, person
     </div>
 );
 
-const ChatView: React.FC<ChatViewProps> = ({ chatSession, activePersona, onSendMessage, onOpenSidebar, onOpenChatSettings, isGenerating, onCancel, onImageSelect, selectedImage, onToggleFavorite, onContinue, onRefine, onShare, promptFromFeed, isOnline, onOpenViewer, onGenerateImageFromPrompt, customUserDp, onGenerateAudioForMessage, onToggleAudio, currentlyPlayingMessageId, isAudioPlaying }) => {
+const ChatView: React.FC<ChatViewProps> = ({ chatSession, onSendMessage, onOpenSidebar, onOpenInstructionEditor, isGenerating, onCancel, onImageSelect, selectedImage, onToggleFavorite, onContinue, onRefine, onShare, promptFromFeed, isOnline, onOpenViewer, onGenerateAudioForMessage, onGenerateImageFromPrompt, customUserDp, onToggleAudio, currentlyPlayingMessageId, isAudioPlaying }) => {
   const [input, setInput] = useState('');
   const mainRef = useRef<HTMLDivElement>(null);
   const [activeMessageMenu, setActiveMessageMenu] = useState<string | null>(null);
@@ -271,12 +275,13 @@ const ChatView: React.FC<ChatViewProps> = ({ chatSession, activePersona, onSendM
   useEffect(() => {
       const mainEl = mainRef.current;
       if (mainEl) {
+        // Only autoscroll if user is near the bottom.
         const isScrolledToBottom = mainEl.scrollHeight - mainEl.clientHeight <= mainEl.scrollTop + 100;
         if (isScrolledToBottom) {
              mainEl.scrollTo({ top: mainEl.scrollHeight, behavior: 'smooth' });
         }
       }
-  }, [chatSession?.messages.length, chatSession?.messages[chatSession?.messages.length - 1]?.content]);
+  }, [chatSession?.messages.length, chatSession?.messages[chatSession.messages.length - 1]?.content]);
 
   useEffect(() => {
     if (promptFromFeed.prompt && promptFromFeed.timestamp > 0) {
@@ -286,7 +291,7 @@ const ChatView: React.FC<ChatViewProps> = ({ chatSession, activePersona, onSendM
   
   const renderMessages = () => {
     if (!chatSession || chatSession.messages.length === 0) {
-      return <EmptyState onSuggestionClick={setInput} persona={activePersona}/>;
+      return <EmptyState onSuggestionClick={setInput} />;
     }
     return (
       <div className="space-y-4">
@@ -299,15 +304,14 @@ const ChatView: React.FC<ChatViewProps> = ({ chatSession, activePersona, onSendM
                 onImageSelect={onImageSelect}
                 selectedImage={selectedImage}
                 onOpenViewer={handleOpenViewerForUrl}
+                onGenerateAudioForMessage={onGenerateAudioForMessage}
                 onGenerateImageFromPrompt={onGenerateImageFromPrompt}
                 customUserDp={customUserDp}
-                persona={activePersona}
                 onShowMenu={handleShowMenu}
-                activeMessageMenu={activeMessageMenu}
-                onGenerateAudioForMessage={onGenerateAudioForMessage}
                 onToggleAudio={onToggleAudio}
                 currentlyPlayingMessageId={currentlyPlayingMessageId}
                 isAudioPlaying={isAudioPlaying}
+                activeMessageMenu={activeMessageMenu}
             />
             {activeMessageMenu === message.id && (
                 <div className={`absolute z-10 ${message.role === 'user' ? 'right-10' : 'left-10'} -bottom-4`}>
@@ -315,8 +319,7 @@ const ChatView: React.FC<ChatViewProps> = ({ chatSession, activePersona, onSendM
                         message={message}
                         onRefine={(option) => { onRefine(message.id, option); setActiveMessageMenu(null); }}
                         onShare={() => { onShare(message.id); setActiveMessageMenu(null); }}
-                        onToggleFavorite={() => { onToggleFavorite(message); setActiveMessageMenu(null); }}
-                        onContinue={() => { onContinue(message.id); setActiveMessageMenu(null); }}
+                        onToggleFavorite={() => { onToggleFavorite(message.id); setActiveMessageMenu(null); }}
                         onClose={() => setActiveMessageMenu(null)}
                     />
                 </div>
@@ -329,42 +332,36 @@ const ChatView: React.FC<ChatViewProps> = ({ chatSession, activePersona, onSendM
   
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent overflow-hidden">
-      <header className="flex items-center justify-between p-3 border-b border-outline flex-shrink-0 bg-background/80 backdrop-blur-md z-10">
+      <header className="flex items-center justify-between p-3 border-b border-outline flex-shrink-0 bg-background/80 backdrop-blur-md">
         <div className="flex items-center space-x-2">
-            <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center overflow-hidden">
-                     {activePersona?.avatarUrl ? <img src={activePersona.avatarUrl} alt={activePersona.name} className="w-full h-full object-cover" /> : <SparklesIcon className="w-5 h-5 text-on-primary" />}
-                </div>
-                <div>
-                    <h1 className="text-base font-semibold leading-tight">{chatSession?.title || 'New Chat'}</h1>
-                    <p className="text-xs text-on-surface-variant leading-tight">{activePersona?.name || 'Default Assistant'}</p>
-                </div>
-            </div>
+            <button onClick={onOpenSidebar} className="p-2 rounded-full hover:bg-surface-variant md:hidden" aria-label="Open sidebar"><MenuIcon className="w-6 h-6" /></button>
+            <h1 className="text-lg font-semibold">{chatSession?.title || 'New Chat'}</h1>
         </div>
         <div className="flex items-center gap-2">
           {!isOnline && <span className="text-xs font-semibold text-red-400 bg-red-500/20 px-2 py-0.5 rounded-full">Offline</span>}
-          <button onClick={onOpenChatSettings} className="p-2 rounded-full hover:bg-surface-variant" aria-label="Chat settings"><TuneIcon className="w-6 h-6" /></button>
+          <button onClick={onOpenInstructionEditor} className="p-2 rounded-full hover:bg-surface-variant" aria-label="Edit system instruction"><TuneIcon className="w-6 h-6" /></button>
         </div>
       </header>
       
-      <main ref={mainRef} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40" onClick={() => setActiveMessageMenu(null)}>
+      <main ref={mainRef} className="flex-1 overflow-y-auto p-4 md:p-6" onClick={() => setActiveMessageMenu(null)}>
         <div className="max-w-3xl mx-auto">
+            {chatSession?.messages.length === 0 && <SuggestionPills onSuggestionClick={setInput} />}
             {renderMessages()}
         </div>
       </main>
 
-      <footer className="absolute bottom-0 left-0 right-0 p-4 bg-transparent z-10">
+      <footer className="flex-shrink-0 p-4 bg-background/80 backdrop-blur-md border-t border-outline">
         <div className="max-w-3xl mx-auto">
              {isGenerating && (
               <div className="flex justify-center mb-3">
-                  <button onClick={onCancel} className="flex items-center gap-2 text-sm px-4 py-2 bg-surface border border-outline rounded-full hover:bg-surface-variant transition-colors shadow-strong">
+                  <button onClick={onCancel} className="flex items-center gap-2 text-sm px-4 py-2 bg-surface border border-outline rounded-full hover:bg-surface-variant transition-colors">
                       <SpinnerIcon className="w-4 h-4" />
                       <span>Cancel</span>
                   </button>
               </div>
             )}
              {selectedImage && (
-                <div className="glassmorphic rounded-xl p-2 mb-2 animate-fade-in-up shadow-strong">
+                <div className="bg-surface border border-outline rounded-xl p-2 mb-2 animate-fade-in-up">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2 text-sm">
                       <ImageIcon className="w-5 h-5 text-primary flex-shrink-0" />
@@ -376,14 +373,14 @@ const ChatView: React.FC<ChatViewProps> = ({ chatSession, activePersona, onSendM
                   </div>
                 </div>
              )}
-            <div className="relative flex items-center glassmorphic rounded-3xl shadow-strong">
+            <div className="relative flex items-center">
                 <div className="relative flex-grow">
                     <textarea
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessageWrapper(); } }}
-                        placeholder={`Message ${activePersona?.name || 'SHIGEN'}...`}
-                        className="w-full bg-transparent rounded-3xl p-3 pr-14 resize-none text-base text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary transition"
+                        placeholder="Message SHIGEN... (try 'draw a robot')"
+                        className="w-full bg-surface-variant rounded-2xl p-3 pr-14 resize-none text-base border border-transparent focus:ring-2 focus:ring-primary focus:border-primary transition"
                         rows={1}
                         style={{ minHeight: '52px' }}
                         disabled={isGenerating}

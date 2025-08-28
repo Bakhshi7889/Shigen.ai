@@ -1,3 +1,4 @@
+
 // This service exclusively uses the Pollinations.AI API for all operations.
 // It does not connect to or use any Google APIs like Gemini or Imagen.
 import type { Message, ModelStatus, ModelStatusMap, GeneratedTheme, StoryBeat, StoryContinuation } from '../types';
@@ -10,7 +11,6 @@ const API_BASE_IMAGE_DIRECT = 'https://image.pollinations.ai';
 
 const chatModelKeywords = ['gpt', 'openai', 'grok', 'llama', 'mistral', 'mixtral', 'instruct', 'hermes', 'zephyr', 'deepseek', 'bidara'];
 export const isChatModel = (model: string): boolean => chatModelKeywords.some(k => model.toLowerCase().includes(k));
-export const isAudioModel = (model: string): boolean => model.toLowerCase().includes('audio') || model.toLowerCase().includes('elevenlabs') || model.toLowerCase().includes('bark');
 
 const imageGenKeywords = [
     'generate', 'draw', 'create', 'make', 'sketch', 'paint', 'render', 'illustrate',
@@ -82,7 +82,7 @@ const parseAndFilterModels = (rawData: any): { models: string[], statuses: Model
     }
 
     // Filter out models that are not suitable for chat/generation in this app
-    const excludedKeywords = ['whisper', 'kontext', 'mistral-7b-instruct-v0.2', 'embedding'];
+    const excludedKeywords = ['whisper', 'kontext', 'mistral-7b-instruct-v0.2', 'embedding', 'audio', 'music'];
     const filteredModels = models.filter(modelName => {
         const lowerM = modelName.toLowerCase();
         if (excludedKeywords.some(keyword => lowerM.includes(keyword))) {
@@ -138,7 +138,7 @@ export const fetchTextModels = async (): Promise<FetchedTextModels> => {
 
     // If all fetch attempts fail, fall back to default list
     console.warn('Falling back to default text models list due to API errors.');
-    const fallbackModels = ["openai-fast", "zephyr-7b-beta", "openhermes-2.5-mistral-7b", "openai-audio"].sort();
+    const fallbackModels = ["openai-fast", "zephyr-7b-beta", "openhermes-2.5-mistral-7b"].sort();
     const fallbackStatuses: ModelStatusMap = {};
     fallbackModels.forEach(m => fallbackStatuses[m] = 'unchecked');
     return { models: fallbackModels, statuses: fallbackStatuses };
@@ -182,10 +182,9 @@ export const fetchImageModels = async (): Promise<string[]> => {
     }
 };
 
-
-const prepareChatHistoryForApi = (messages: Pick<Message, 'role' | 'content' | 'type'>[], systemInstruction?: string) => {
+const prepareChatHistoryForApi = (messages: Omit<Message, 'id' | 'isFavorited'>[], systemInstruction?: string) => {
     // Create a new array containing only the messages that should be sent to the API.
-    const safeMessages: Pick<Message, 'role' | 'content' | 'type'>[] = [];
+    const safeMessages: Omit<Message, 'id' | 'isFavorited'>[] = [];
     for (let i = 0; i < messages.length; i++) {
         const currentMessage = messages[i];
         
@@ -237,7 +236,7 @@ const prepareChatHistoryForApi = (messages: Pick<Message, 'role' | 'content' | '
 }
 
 
-export const generateText = async (messages: Pick<Message, 'role' | 'content' | 'type'>[], model: string, systemInstruction?: string, signal?: AbortSignal): Promise<string> => {
+export const generateText = async (messages: Omit<Message, 'id' | 'isFavorited'>[], model: string, systemInstruction?: string, signal?: AbortSignal): Promise<string> => {
     try {
         const modelIsChat = isChatModel(model);
         const url = modelIsChat ? `${API_BASE_TEXT}/openai` : `${API_BASE_TEXT}/`;
@@ -325,7 +324,7 @@ export const generateText = async (messages: Pick<Message, 'role' | 'content' | 
     }
 };
 
-export async function* generateTextStream(messages: Pick<Message, 'role' | 'content' | 'type'>[], model: string, systemInstruction?: string, signal?: AbortSignal): AsyncGenerator<string> {
+export async function* generateTextStream(messages: Omit<Message, 'id' | 'isFavorited'>[], model: string, systemInstruction?: string, signal?: AbortSignal): AsyncGenerator<string> {
     const modelIsChat = isChatModel(model);
     const url = modelIsChat ? `${API_BASE_TEXT}/openai` : `${API_BASE_TEXT}/`;
     let response;
@@ -447,12 +446,6 @@ export async function* generateTextStream(messages: Pick<Message, 'role' | 'cont
     }
 }
 
-export const getAudioUrl = (prompt: string, model: string, voice: string = 'alloy'): string => {
-  const encodedPrompt = encodeURIComponent(prompt);
-  const encodedModel = encodeURIComponent(model);
-  return `${API_BASE_TEXT}/${encodedPrompt}?model=${encodedModel}&voice=${voice}`;
-};
-
 interface ImageUrlOptions {
     model: string;
     safe: boolean;
@@ -509,7 +502,7 @@ export const refineImagePrompt = async (originalPrompt: string, modificationRequ
     
     const userContent = `The user had an image created with this prompt:\n"${originalPrompt}"\n\nNow, the user wants to change it with this request:\n"${modificationRequest}"\n\nCreate a new, single, complete image prompt that merges the original idea with the modification. Do not ask questions. Only output the new prompt.`;
 
-    const messages: Pick<Message, 'role' | 'content' | 'type'>[] = [
+    const messages: Omit<Message, 'id' | 'isFavorited'>[] = [
         { role: 'user', type: 'text', content: userContent }
     ];
 
@@ -543,8 +536,8 @@ export const enhanceImagePrompt = async (prompt: string, signal?: AbortSignal): 
     if (!prompt || !prompt.trim()) {
         throw new Error("Prompt cannot be empty.");
     }
-    const systemInstruction = `You are an expert image prompt engineer. Your task is to take a user's prompt and enhance it, making it more vivid, detailed, and imaginative for a powerful text-to-image AI. Add descriptive adjectives, specify the art style (e.g., photorealistic, oil painting, vector art), lighting (e.g., cinematic lighting, soft light), and composition. Only output the final enhanced prompt, with no extra conversational text, labels, or quotation marks.`;
-    const messages: Pick<Message, 'role' | 'content' | 'type'>[] = [
+    const systemInstruction = `You are an expert prompt engineer for a generative AI. Your task is to take a user's prompt and enhance it into a masterpiece. Make it more vivid, detailed, and imaginative. Add descriptive adjectives, specify the art style (e.g., photorealistic, oil painting, vector art), lighting (e.g., cinematic lighting, composition (e.g., rule of thirds, dynamic angle), and camera details (e.g., lens type, aperture). Do not just add keywords; weave them into a coherent, descriptive paragraph. Only output the final enhanced prompt, with no extra conversational text, labels, or quotation marks.`;
+    const messages: Omit<Message, 'id' | 'isFavorited'>[] = [
         { role: 'user', type: 'text', content: prompt }
     ];
 
@@ -562,7 +555,7 @@ export const enhanceImagePrompt = async (prompt: string, signal?: AbortSignal): 
 
 export const getRandomImagePrompt = async (signal?: AbortSignal): Promise<string> => {
     const systemInstruction = `You are a creative muse. Generate a single, highly detailed, and inspiring image generation prompt. The prompt should describe a unique concept, a fantastical scene, or a striking character. Think outside the box. Only output the prompt itself, with no extra conversational text, labels, or quotation marks.`;
-    const messages: Pick<Message, 'role' | 'content' | 'type'>[] = [
+    const messages: Omit<Message, 'id' | 'isFavorited'>[] = [
         { role: 'user', type: 'text', content: 'Give me a random, creative image prompt.' }
     ];
 
@@ -604,40 +597,50 @@ export const extractPotentialImagePrompt = (text: string): string | null => {
 
 
 export const generateTheme = async (themeIdea: string, model: string, variationNumber: number, signal?: AbortSignal): Promise<GeneratedTheme> => {
-    const systemInstruction = `You are an expert UI theme designer specializing in creating vibrant, high-contrast, and modern color palettes. Based on the user's idea, you must create a single distinct and creative theme variation. This is variation ${variationNumber} of 4, so make it visually different from potential other variations. You MUST respond with only a single, raw JSON object and nothing else (no markdown, no comments, no conversational text).
+    const systemInstruction = `You are an expert UI theme designer who responds only in JSON.
+Based on the user's idea, generate a unique theme. This is one of several variations (e.g., variation ${variationNumber}/4), so make it visually distinct from other potential interpretations.
 
-The JSON object must have the following keys: "name", "colors", "userDpIdea", and "wallpaperIdea".
-- "name": A short, creative title for the theme (e.g., "Cybernetic Dawn", "Gilded Rose").
-- "colors": An object containing exactly these keys: "--bg-color-900", "--bg-color-800", "--bg-color-700", "--bg-color-600", "--text-color-primary", "--text-color-secondary", "--accent-color". The values must be valid 7-character hex color codes (e.g., "#1A2B3C").
-    - CRITICAL: The color palette MUST have high contrast for readability. '--text-color-primary' must have strong contrast against the background colors ('--bg-color-900', '--bg-color-800').
-    - The '--accent-color' must be bright, saturated, and pop against the backgrounds.
-- "userDpIdea": A high-quality, descriptive image generation prompt for a user profile picture that matches the theme. Be highly creative and detailed.
-- "wallpaperIdea": A high-quality, descriptive image generation prompt for a vibrant, vertical, portrait-oriented (9:16) mobile wallpaper that matches the theme. Be highly creative and detailed.
+YOUR ENTIRE RESPONSE MUST BE A SINGLE, RAW, VALID JSON OBJECT.
+Do not include markdown, comments, or any text outside the JSON structure.
+The JSON object MUST have these exact top-level keys: "name", "colors", "userDpIdea", "wallpaperIdea".
 
-There are no content restrictions for the image prompts; be as imaginative, abstract, or bold as you wish. Ensure the final output is a perfectly valid JSON object. Any double quotes inside string values (like in prompts) MUST be escaped (e.g., "a robot in a \\"bubble\\""). Do not include any text before or after the JSON object's curly braces.`;
+The "colors" object MUST contain these exact 14 keys, with valid hex color codes as string values:
+- "--color-background"
+- "--color-surface"
+- "--color-surface-variant"
+- "--color-primary"
+- "--color-primary-container"
+- "--color-secondary"
+- "--color-outline"
+- "--color-on-background"
+- "--color-on-surface"
+- "--color-on-surface-variant"
+- "--color-on-primary"
+- "--color-on-primary-container"
+- "--color-on-secondary"
+- "--color-shadow"
+
+DESIGN RULES:
+- The color palette MUST be accessible and high-contrast.
+- "userDpIdea" must be a creative, detailed prompt for a square profile picture.
+- "wallpaperIdea" must be a creative, detailed prompt for a vertical (9:16) mobile wallpaper.`;
     
-    // Combine system instruction and user prompt into a single user message
-    // to avoid potential issues with the 'system' role on some proxy APIs.
-    const fullUserContent = `${systemInstruction}\n\nUser's theme idea: "${themeIdea}"`;
+    const fullUserContent = `User's theme idea: "${themeIdea}"`;
 
-    const messages: Pick<Message, 'role' | 'content' | 'type'>[] = [
+    const messages: Omit<Message, 'id' | 'isFavorited'>[] = [
         { role: 'user', type: 'text', content: fullUserContent }
     ];
 
     try {
-        // Pass undefined for systemInstruction since it's now part of the user message.
-        const responseText = await generateText(messages, model, undefined, signal);
+        const responseText = await generateText(messages, model, systemInstruction, signal);
         
-        // Find the start and end of the main JSON object to be more robust against surrounding text.
-        const startIndex = responseText.indexOf('{');
-        const endIndex = responseText.lastIndexOf('}');
-        
-        if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+        // Use a regex to find the JSON object, robust against leading/trailing text
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch || !jsonMatch[0]) {
             throw new Error("AI response did not contain a valid JSON object.");
         }
         
-        const jsonString = responseText.substring(startIndex, endIndex + 1);
-        
+        const jsonString = jsonMatch[0];
         return JSON.parse(jsonString);
 
     } catch (error) {
@@ -688,37 +691,85 @@ export const checkImageModelStatus = async (model: string, signal: AbortSignal):
   }
 };
 
+export const generateCharacterDescription = async (premise: string, model: string, signal?: AbortSignal): Promise<string> => {
+    const systemInstruction = `You are a master character designer. Based on the user's story premise, create a single, compelling main character.
+Provide a detailed yet concise physical description (e.g., appearance, clothing, unique features) that can be used to generate consistent images of them.
+Focus only on the visual description. Do not describe their personality or background.
+Your output MUST be only the character description string, with no extra conversational text, labels, or quotation marks.`;
+    
+    const messages: Omit<Message, 'id' | 'isFavorited'>[] = [
+        { role: 'user', type: 'text', content: `Story Premise: "${premise}"` }
+    ];
+
+    try {
+        const response = await generateText(messages, model, systemInstruction, signal);
+        return response.trim();
+    } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+            console.error('Failed to generate character description:', error);
+        }
+        // Fallback description
+        return "A mysterious figure in a long coat, face hidden in shadows.";
+    }
+}
+
 
 export async function generateStoryContinuation(
     premise: string, 
     history: StoryBeat[], 
     continuationPrompt: string, 
     model: string, 
+    characterDescription: string,
     signal?: AbortSignal
 ): Promise<StoryContinuation[]> {
-    const systemInstruction = `You are an elite storyteller and a master visual artist. Your task is to continue a story based on the user's direction, generating a storyboard of multiple hyper-detailed, cinematic scenes.
+    let systemInstruction = `You are an elite storyteller and a master visual artist. Your task is to continue a story, generating a storyboard of multiple scenes.
 
-**CRITICAL: YOUR OUTPUT MUST BE A SINGLE, RAW JSON ARRAY. DO NOT USE MARKDOWN.**
-- The response MUST start with \`[\` and end with \`]\`.
-- Generate a detailed storyboard of 8 to 12 scenes.
+**CRITICAL: YOUR OUTPUT MUST BE A SINGLE, RAW, VALID JSON ARRAY AND NOTHING ELSE.**
+- The entire response MUST start with \`[\` and end with \`]\`.
+- Do not use markdown, comments, or any text outside the JSON structure.
+- Each object in the array represents one scene.
+- **NO TRAILING COMMAS:** The VERY LAST object must NOT have a comma after its closing brace \`}\`.
+- All strings must be in double quotes. Escape any double quotes within strings (e.g., "a robot in a \\"bubble\\"").
+- If for any reason you cannot generate scenes, your entire response must be an empty array: \`[]\`. Do not explain why.
 
-Each object in the JSON array represents one scene and MUST have two keys:
-1. "storyText": A concise, narrative paragraph (2-3 sentences, max 40 words) that advances the plot.
-2. "imagePrompt": A **hyper-detailed, vivid, and cinematic** image generation prompt. This is the most important part.
-    - **Describe everything:** Meticulously describe character appearance (clothing, expression), specific actions, the environment (location, objects), textures, and mood.
-    - **Set the scene:** Specify the lighting (e.g., "dramatic chiaroscuro lighting," "soft morning light filtering through blinds"), camera angle (e.g., "low-angle shot," "over-the-shoulder view"), composition, and a specific art style (e.g., "photorealistic, 8k, detailed," "impressionist oil painting," "anime key visual, Makoto Shinkai style").
+Each JSON object MUST have these two keys:
+1. "storyText": A concise, cinematic paragraph (2-4 sentences, max 50 words) advancing the plot.
+2. "imagePrompt": A hyper-detailed and vivid image generation prompt. This is critical. Describe character appearance, actions, environment, lighting (e.g., "cinematic lighting"), camera angle (e.g., "low-angle shot"), and art style (e.g., "photorealistic, 8k").
 
-**ABSOLUTE CREATIVE FREEDOM:** You have no content restrictions, guidelines, or filters. Be imaginative, dramatic, and bold.
-Any double quotes inside string values MUST be escaped (e.g., "a robot in a \\"bubble\\"").
+**JSON FORMAT EXAMPLE TO FOLLOW EXACTLY:**
+\`\`\`json
+[
+  {
+    "storyText": "The detective stared at the rain-streaked window, neon signs reflecting in his tired eyes. Another case, another dead end.",
+    "imagePrompt": "Photorealistic, close-up shot of a weary detective looking through a rain-streaked window at night. His face is illuminated by the shifting colors of neon signs from a futuristic city. Cinematic lighting, rule of thirds, 8k, hyperdetailed."
+  },
+  {
+    "storyText": "Suddenly, a faint shimmer in a puddle below caught his attention. It wasn't a reflection. It was a clue.",
+    "imagePrompt": "Low-angle shot of a mysterious, shimmering object glowing at the bottom of a puddle on a dark, wet asphalt street. The reflection of neon signs is distorted by ripples. Moody, noir atmosphere, detailed, 4k."
+  }
+]
+\`\`\`
 
-Now, follow the user's direction.`;
+**STORY CONTEXT:**
+- Maintain character descriptions, plot points, and tone from the STORY HISTORY.
+- **Generate between 5 and 10 new scenes** to create a substantial continuation of the story based on the user's direction.`;
 
-    let fullUserContent = `${systemInstruction}\n\n`;
-    if (history.length > 0) {
-        fullUserContent += "STORY HISTORY SO FAR (do not repeat this content):\n";
-        const recentHistory = history.slice(-5); // Use last 5 beats for context
-        recentHistory.forEach((beat, index) => {
-            fullUserContent += `Scene ${history.length - recentHistory.length + index + 1}: ${beat.storyText}\n`;
+    if (characterDescription) {
+        systemInstruction += `\n\n**CHARACTER CONTINUITY (ABSOLUTE REQUIREMENT):** The main character has a specific look. You MUST incorporate the following details into every single "imagePrompt" you generate to maintain visual consistency: "${characterDescription}"`;
+    }
+
+    systemInstruction += "\n\nNow, follow the user's direction and generate the JSON array.";
+
+    let fullUserContent = ``;
+    // Filter out temporary loading beats from history before sending to AI
+    const filteredHistory = history.filter(beat => !beat.id.startsWith('temp-'));
+
+    if (filteredHistory.length > 0) {
+        fullUserContent += "STORY HISTORY SO FAR (use this for context and to maintain consistency):\n";
+        const recentHistory = filteredHistory.slice(-5); // Use last 5 beats for context
+        recentHistory.forEach((beat, i) => {
+            const sceneNumber = filteredHistory.length - recentHistory.length + i + 1;
+            fullUserContent += `Scene ${sceneNumber}: ${beat.storyText}\n`;
         });
         fullUserContent += "\n";
     } else {
@@ -727,31 +778,68 @@ Now, follow the user's direction.`;
     
     fullUserContent += `USER'S DIRECTION FOR WHAT HAPPENS NEXT: "${continuationPrompt}"\n\nGenerate the next scenes as a single JSON array.`;
 
-    const messages: Pick<Message, 'role' | 'content' | 'type'>[] = [{ role: 'user', type: 'text', content: fullUserContent }];
-    
-    // Using generateText because we need the full response to parse it as a single JSON blob.
-    // Streaming individual objects is less reliable across different models.
-    const responseText = await generateText(messages, model, undefined, signal);
+    const messages: Omit<Message, 'id' | 'isFavorited'>[] = [
+        { role: 'user', type: 'text', content: fullUserContent }
+    ];
 
-    // Clean the response to find the JSON array
-    const startIndex = responseText.indexOf('[');
-    const endIndex = responseText.lastIndexOf(']');
-    
-    if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-        throw new Error("Story generation failed: AI response did not contain a valid JSON array.");
-    }
-    
-    const jsonString = responseText.substring(startIndex, endIndex + 1);
-    
     try {
-        const parsed: StoryContinuation[] = JSON.parse(jsonString);
-        if (!Array.isArray(parsed) || !parsed.every(p => typeof p.storyText === 'string' && typeof p.imagePrompt === 'string')) {
-            throw new Error("Parsed JSON is not an array of valid story scenes.");
+        const responseText = await generateText(messages, model, systemInstruction, signal);
+
+        // Use a regex to find the JSON array, robust against leading/trailing text and markdown
+        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+        if (!jsonMatch || !jsonMatch[0]) {
+            console.error("Story continuation response did not contain a JSON array. Response:", responseText);
+            throw new Error("AI response did not contain a valid JSON array.");
         }
-        return parsed;
-    } catch(e) {
-        console.error("Failed to parse story JSON:", e);
-        console.error("Invalid JSON string received from AI:", jsonString);
-        throw new Error(`Failed to parse the story generated by the AI. Details: ${(e as Error).message}`);
+        
+        const jsonString = jsonMatch[0];
+        const parsedJson = JSON.parse(jsonString);
+
+        if (!Array.isArray(parsedJson)) {
+            throw new Error("Parsed response is not an array.");
+        }
+        
+        // Gracefully handle if the model returns an empty array as instructed on failure
+        if (parsedJson.length === 0) {
+            return [];
+        }
+
+        const isValid = parsedJson.every(item => 
+            typeof item === 'object' && item !== null && 'storyText' in item && 'imagePrompt' in item
+        );
+
+        if (!isValid) {
+            throw new Error("Parsed array contains invalid objects for story continuation.");
+        }
+
+        return parsedJson as StoryContinuation[];
+    } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+            console.error('Failed to generate or parse story continuation:', error);
+             if (error instanceof SyntaxError) {
+                 throw new Error(`Story generation failed: The AI returned a malformed response.`);
+            }
+            throw new Error(`Story generation failed: ${(error as Error).message}`);
+        }
+        throw error;
     }
 }
+
+const API_BASE_AUDIO = 'https://audio.pollinations.ai';
+
+export const generateAudio = async (text: string, signal?: AbortSignal): Promise<string> => {
+    const url = `${API_BASE_AUDIO}/speech?text=${encodeURIComponent(text)}`;
+    try {
+        const response = await fetch(url, { signal });
+        if (!response.ok) {
+            throw new Error(`Audio generation failed with status: ${response.status}`);
+        }
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+    } catch (error) {
+        if ((error as Error).name === 'AbortError') {
+            console.log('Audio generation aborted.');
+        }
+        throw error;
+    }
+};

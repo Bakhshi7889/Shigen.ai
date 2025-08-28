@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import StarIcon from './icons/StarIcon';
 
@@ -44,12 +43,12 @@ const ImageWithLoader: React.FC<{
 
     return (
         <div 
-            className={`bg-shigen-gray-700 rounded-lg aspect-square w-full h-full flex items-center justify-center relative overflow-hidden transition-all duration-200 group ${onClick ? 'cursor-pointer' : ''} ${isSelected ? 'ring-2 ring-shigen-blue ring-offset-2 ring-offset-shigen-gray-900' : ''}`}
+            className={`bg-surface-variant rounded-xl aspect-square w-full h-full flex items-center justify-center relative overflow-hidden transition-all duration-200 group ${onClick ? 'cursor-pointer' : ''} ${isSelected ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}
             onClick={onClick}
             onDoubleClick={onDoubleClick}
         >
             {status === 'loading' && (
-                <div className="text-shigen-gray-500 text-sm animate-pulse">Loading...</div>
+                <div className="text-on-surface-variant text-sm animate-pulse">Loading...</div>
             )}
             {status === 'error' && (
                  <div className="text-red-400 text-xs text-center p-2">Error loading</div>
@@ -58,7 +57,7 @@ const ImageWithLoader: React.FC<{
                 ref={imageRef}
                 src={src}
                 alt={alt}
-                className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100 animate-reveal' : 'opacity-0'}`}
+                className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
             />
             {isFavorited && (
                 <div className="absolute top-2 right-2 p-1.5 bg-black/40 rounded-full">

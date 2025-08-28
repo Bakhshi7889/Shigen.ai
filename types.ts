@@ -1,4 +1,5 @@
 
+
 export type MessageRole = 'user' | 'bot';
 export type MessageType = 'text' | 'image' | 'loading' | 'error' | 'audio';
 
@@ -9,8 +10,6 @@ export interface ImageContent {
 
 export interface AudioContent {
   url: string;
-  prompt: string;
-  model: string;
 }
 
 export interface Message {
@@ -19,8 +18,15 @@ export interface Message {
   type: MessageType;
   content: string | ImageContent | AudioContent;
   isFavorited?: boolean;
-  audioUrl?: string;
   isGeneratingAudio?: boolean;
+  audioUrl?: string;
+}
+
+export interface Persona {
+  id: string;
+  name: string;
+  instruction: string;
+  avatarUrl?: string;
 }
 
 export interface ChatSession {
@@ -28,21 +34,22 @@ export interface ChatSession {
   title: string;
   messages: Message[];
   systemInstruction?: string;
+  personaId?: string | null;
+  timestamp: number;
 }
 
-export type RefineOption = 'shorter' | 'longer' | 'formal' | 'simple';
+export type RefineOption = 'shorter' | 'longer' | 'formal' | 'simple' | 'copy';
 
 export type ModelStatus = 'unchecked' | 'checking' | 'available' | 'unavailable';
 export type ModelStatusMap = Record<string, ModelStatus>;
 
-export type Theme = 'shigen' | 'light' | 'rose-gold' | 'ocean-deep';
+export type Theme = 'light' | 'dark' | 'oceanic' | 'sunset' | 'monochrome';
 
 export interface Settings {
   textModel: string;
   imageModel: string;
-  audioModel: string;
-  audioVoice: string;
   theme: Theme;
+  aiTheme: GeneratedTheme | null;
 }
 
 export type ViewMode = 'chat' | 'image-generator' | 'story';
@@ -73,11 +80,7 @@ export interface ImageSession {
   id: string;
   title: string;
   generations: ImageGeneration[];
-}
-
-export interface FavoriteImage {
-    url: string;
-    config: ImageGenConfig;
+  timestamp: number;
 }
 
 export type NotificationType = 'success' | 'error' | 'info';
@@ -90,13 +93,20 @@ export interface Notification {
 export type PromptHelperStatus = 'idle' | 'enhancing' | 'gettingRandom' | 'refining';
 
 export interface ThemeColors {
-    '--bg-color-900': string;
-    '--bg-color-800': string;
-    '--bg-color-700': string;
-    '--bg-color-600': string;
-    '--text-color-primary': string;
-    '--text-color-secondary': string;
-    '--accent-color': string;
+    '--color-background': string;
+    '--color-surface': string;
+    '--color-surface-variant': string;
+    '--color-primary': string;
+    '--color-primary-container': string;
+    '--color-secondary': string;
+    '--color-outline': string;
+    '--color-on-background': string;
+    '--color-on-surface': string;
+    '--color-on-surface-variant': string;
+    '--color-on-primary': string;
+    '--color-on-primary-container': string;
+    '--color-on-secondary': string;
+    '--color-shadow': string;
 }
 
 export interface GeneratedTheme {
@@ -108,26 +118,60 @@ export interface GeneratedTheme {
     wallpaperUrl?: string;
 }
 
-// A single illustrated moment in the story.
 export interface StoryBeat {
   id: string;
   storyText: string;
   imageUrl: string;
   imagePrompt: string;
-  userPrompt: string; // The user's input that led to this beat
-  isGenerating?: boolean; // A single flag for simplicity
+  userPrompt: string;
+  isGenerating?: boolean;
+  isFavorited?: boolean;
 }
 
-// The data structure for a single piece of a streamed story continuation.
 export interface StoryContinuation {
     storyText: string;
     imagePrompt: string;
 }
 
-// A full story session.
 export interface StorySession {
   id: string;
   title: string;
-  premise: string; // The initial idea for the story
+  premise: string;
+  characterDescription: string;
   beats: StoryBeat[];
+  timestamp: number;
 }
+
+export interface HistoryItem {
+    id: string;
+    title: string;
+    type: ViewMode;
+    timestamp: number;
+}
+
+// Unified Favorites (Inspiration Board)
+export interface FavoriteImage {
+    type: 'image';
+    url: string;
+    config: ImageGenConfig;
+}
+
+export interface FavoriteMessage {
+    type: 'message';
+    id: string;
+    content: string;
+    sessionId: string;
+    sessionTitle: string;
+    personaId?: string | null;
+}
+
+export interface FavoriteStoryBeat {
+    type: 'story-beat';
+    id: string;
+    storyText: string;
+    imageUrl: string;
+    sessionId: string;
+    sessionTitle: string;
+}
+
+export type FavoriteItem = FavoriteImage | FavoriteMessage | FavoriteStoryBeat;

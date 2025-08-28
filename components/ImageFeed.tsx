@@ -1,7 +1,9 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import PhotoIcon from './icons/PhotoIcon';
+import ImageWithLoader from './ImageWithLoader';
 
 interface ImageFeedProps {
     isOpen: boolean;
@@ -50,10 +52,15 @@ const ImageFeed: React.FC<ImageFeedProps> = ({ isOpen, onClose, onPromptSelect }
                     if (!promptText && data.imageURL && typeof data.imageURL === 'string') {
                         try {
                             const url = new URL(data.imageURL);
-                            const pathSegments = url.pathname.split('/');
-                            if (pathSegments.length > 2 && pathSegments[1] === 'prompt') {
-                                const rawPrompt = pathSegments.slice(2).join('/');
-                                promptText = decodeURIComponent(rawPrompt);
+                            const promptFromQuery = url.searchParams.get('prompt');
+                            if (promptFromQuery) {
+                                promptText = promptFromQuery;
+                            } else {
+                                const pathSegments = url.pathname.split('/');
+                                if (pathSegments.length > 2 && pathSegments[1] === 'prompt') {
+                                    const rawPrompt = pathSegments.slice(2).join('/');
+                                    promptText = decodeURIComponent(rawPrompt);
+                                }
                             }
                         } catch (e) {
                             console.warn("Could not parse prompt from imageURL:", data.imageURL);
@@ -94,18 +101,8 @@ const ImageFeed: React.FC<ImageFeedProps> = ({ isOpen, onClose, onPromptSelect }
     }, [isOpen, isFeedActive]);
 
     const handlePromptClick = (prompt: string) => {
-        onPromptSelect(prompt);
+        onPromptSelect(`/generate ${prompt}`);
     };
-
-    const animationStyle = `
-        @keyframes slideInRight {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-        .animate-slide-in-right {
-            animation: slideInRight 0.3s ease-out forwards;
-        }
-    `;
     
     const renderContent = () => {
         if (connectionStatus === 'error') {
@@ -121,47 +118,36 @@ const ImageFeed: React.FC<ImageFeedProps> = ({ isOpen, onClose, onPromptSelect }
                 <button
                     key={item.id}
                     onClick={() => handlePromptClick(item.prompt)}
-                    className="w-full text-left p-3 bg-shigen-gray-900/50 rounded-lg hover:bg-shigen-gray-700 transition-colors group animate-fade-in"
+                    className="w-full text-left p-3 bg-surface rounded-2xl hover:bg-surface-variant transition-colors group animate-fade-in"
                     aria-label={`Use prompt: ${item.prompt}`}
                 >
-                    <img src={item.imageURL} alt={item.prompt} className="w-full h-auto rounded-md mb-2 object-cover aspect-square bg-shigen-gray-700" loading="lazy" />
-                    <p className="text-sm text-shigen-gray-400 font-mono group-hover:text-shigen-gray-300 transition-colors">{item.prompt}</p>
+                    <ImageWithLoader src={item.imageURL} alt={item.prompt} />
+                    <p className="text-sm text-on-surface-variant font-mono group-hover:text-on-surface transition-colors mt-2 line-clamp-2">{item.prompt}</p>
                 </button>
             ));
         }
 
-        if (connectionStatus === 'connecting') {
-            return (
-                <div className="flex items-center justify-center h-full text-shigen-gray-600">
-                    <p>Connecting to live image feed...</p>
-                </div>
-            );
-        }
-
-        if (connectionStatus === 'connected') {
-             return (
-                <div className="flex items-center justify-center h-full text-shigen-gray-600">
-                    <p>Waiting for new images...</p>
-                </div>
-            );
-        }
-
+        const statusMap = {
+            connecting: "Connecting to live image feed...",
+            connected: "Waiting for new images...",
+            idle: 'Press "Start Feed" to see live images.'
+        };
+        
         return (
-            <div className="flex items-center justify-center h-full text-shigen-gray-600">
-                <p>Press "Start Feed" to see live images.</p>
+            <div className="flex items-center justify-center h-full text-on-surface-variant">
+                <p>{statusMap[connectionStatus]}</p>
             </div>
         );
     };
 
     return (
         <div className={`fixed inset-0 z-40 transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} >
-            <style>{animationStyle}</style>
-            <div className="absolute inset-0 bg-black bg-opacity-60" onClick={onClose}></div>
-            <div className={`fixed top-0 right-0 h-full bg-shigen-gray-800 w-full max-w-md p-4 z-50 transform shadow-2xl flex flex-col ${isOpen ? 'animate-slide-in-right' : 'translate-x-full'}`}>
+            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose}></div>
+            <div className={`fixed top-0 right-0 h-full bg-background w-full max-w-md p-4 z-50 shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'} border-l border-outline`}>
                 <div className="flex items-center justify-between mb-4 flex-shrink-0">
                     <div className="flex items-center space-x-2">
-                        <PhotoIcon className="w-6 h-6 text-shigen-blue" />
-                        <h2 className="text-xl font-semibold text-shigen-gray-300">Image Feed</h2>
+                        <PhotoIcon className="w-6 h-6 text-primary" />
+                        <h2 className="text-xl font-semibold text-on-surface">Image Feed</h2>
                     </div>
                      <div className="flex items-center space-x-2">
                         <button 
@@ -174,12 +160,12 @@ const ImageFeed: React.FC<ImageFeedProps> = ({ isOpen, onClose, onPromptSelect }
                         >
                             {isFeedActive ? 'Stop Feed' : 'Start Feed'}
                         </button>
-                        <button onClick={onClose} className="p-2 rounded-full hover:bg-shigen-gray-700 transition" aria-label="Close image feed">
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-surface-variant transition text-on-surface-variant" aria-label="Close image feed">
                             <CloseIcon className="h-6 w-6" />
                         </button>
                     </div>
                 </div>
-                <p className="text-sm text-shigen-gray-500 mb-4 flex-shrink-0 border-b border-shigen-gray-700/50 pb-4">
+                <p className="text-sm text-on-surface-variant mb-4 flex-shrink-0 border-b border-outline pb-4">
                     See what images others are creating. Click any prompt to try it yourself.
                 </p>
                 <div className="flex-grow overflow-y-auto space-y-4 -mr-2 pr-2">

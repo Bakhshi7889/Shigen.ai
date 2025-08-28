@@ -3,7 +3,7 @@ import type { Settings, ModelStatusMap, Theme, ModelStatus } from '../types';
 import CloseIcon from './icons/CloseIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
 import PaintBrushIcon from './icons/PaintBrushIcon';
-import { getAudioUrl, isAudioModel } from '../services/pollinations';
+import UsersIcon from './icons/UsersIcon';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -16,110 +16,60 @@ interface SettingsModalProps {
   onCheckModels: () => void;
   isCheckingModels: boolean;
   onOpenThemeGenerator: () => void;
+  onOpenPersonaManager: () => void;
 }
 
-const audioVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const themes: { id: Theme, name: string }[] = [
-    { id: 'shigen', name: 'SHIGEN (Dark)'},
-    { id: 'light', name: 'Paper (Light)' },
-    { id: 'rose-gold', name: 'Rose Gold' },
-    { id: 'ocean-deep', name: 'Ocean Deep' },
+    { id: 'dark', name: 'Dark'},
+    { id: 'light', name: 'Light' },
+    { id: 'oceanic', name: 'Oceanic' },
+    { id: 'sunset', name: 'Sunset' },
+    { id: 'monochrome', name: 'Monochrome' },
 ];
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings, onSettingsChange, textModels, imageModels, modelStatus, onCheckModels, isCheckingModels, onOpenThemeGenerator }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings, onSettingsChange, textModels, imageModels, modelStatus, onCheckModels, isCheckingModels, onOpenThemeGenerator, onOpenPersonaManager }) => {
+  const modalContentRef = useRef<HTMLDivElement>(null);
+  const [dragState, setDragState] = useState({ startY: 0, currentY: 0, isDragging: false });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // Only drag on the main modal body, not on scrollable content
+    if (e.target !== modalContentRef.current && (e.target as HTMLElement).closest('.overflow-y-auto')) {
+      return;
+    }
+    modalContentRef.current?.setPointerCapture(e.pointerId);
+    setDragState({ startY: e.clientY, currentY: e.clientY, isDragging: true });
+  };
+  
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragState.isDragging) return;
+    const deltaY = e.clientY - dragState.startY;
+    // Only allow dragging down
+    if (deltaY > 0) {
+      setDragState(s => ({ ...s, currentY: e.clientY }));
+    }
+  };
+  
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!dragState.isDragging) return;
+    modalContentRef.current?.releasePointerCapture(e.pointerId);
+    const deltaY = dragState.currentY - dragState.startY;
+    const DISMISS_THRESHOLD = 100; // pixels
+    if (deltaY > DISMISS_THRESHOLD) {
+      onClose();
+    }
+    setDragState({ startY: 0, currentY: 0, isDragging: false });
+  };
+  
   if (!isOpen) return null;
 
-  const [isVoicePreviewing, setIsVoicePreviewing] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioAbortControllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    // Initialize audio element on mount
-    audioRef.current = new Audio();
-    const audio = audioRef.current;
-
-    const handleEnded = () => {
-        setIsVoicePreviewing(false);
-        if (audio.src.startsWith('blob:')) {
-            URL.revokeObjectURL(audio.src);
-        }
-    };
-
-    const handleError = () => {
-        console.error("Audio playback error.");
-        setIsVoicePreviewing(false);
-        if (audio.src.startsWith('blob:')) {
-            URL.revokeObjectURL(audio.src);
-        }
-    };
-    
-    audio.addEventListener('ended', handleEnded);
-    audio.addEventListener('error', handleError);
-
-    // Cleanup function
-    return () => {
-        if (audioAbortControllerRef.current) {
-            audioAbortControllerRef.current.abort();
-        }
-        if (audio) {
-            audio.removeEventListener('ended', handleEnded);
-            audio.removeEventListener('error', handleError);
-            audio.pause();
-            if (audio.src && audio.src.startsWith('blob:')) {
-                URL.revokeObjectURL(audio.src);
-            }
-        }
-    };
-  }, []);
+  const dragOffset = dragState.isDragging ? Math.max(0, dragState.currentY - dragState.startY) : 0;
+  const modalStyle: React.CSSProperties = {
+    transform: `translateY(${dragOffset}px)`,
+    transition: dragState.isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
+  };
 
   const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     onSettingsChange({ ...settings, [e.target.name]: e.target.value });
-  };
-  
-  const handleVoiceChangeAndPlayback = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newVoice = e.target.value;
-    onSettingsChange({ ...settings, audioVoice: newVoice });
-
-    // Abort any ongoing fetch and stop any current playback
-    if (audioAbortControllerRef.current) audioAbortControllerRef.current.abort();
-    if (audioRef.current) {
-        audioRef.current.pause();
-        if (audioRef.current.src && audioRef.current.src.startsWith('blob:')) {
-            URL.revokeObjectURL(audioRef.current.src);
-        }
-    }
-    
-    setIsVoicePreviewing(true);
-    
-    const controller = new AbortController();
-    audioAbortControllerRef.current = controller;
-
-    const sampleText = "This is a preview of the selected voice.";
-    const audioUrl = getAudioUrl(sampleText, settings.audioModel, newVoice);
-
-    try {
-        const response = await fetch(audioUrl, { signal: controller.signal });
-        if (!response.ok || !response.body) throw new Error(`Audio fetch failed with status ${response.status}`);
-        
-        const audioBlob = await response.blob();
-        if (controller.signal.aborted) return;
-        
-        if (audioBlob.size === 0 || !audioBlob.type.startsWith('audio/')) throw new Error('Received invalid audio data.');
-
-        const blobUrl = URL.createObjectURL(audioBlob);
-        
-        if (audioRef.current) {
-            audioRef.current.src = blobUrl;
-            await audioRef.current.play();
-        }
-
-    } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-            console.error("Failed to fetch or play audio preview:", err);
-            // Ensure loading state is reset on error
-            setIsVoicePreviewing(false);
-        }
-    }
   };
   
   const someModelsChecked = Object.values(modelStatus).some(s => s !== 'unchecked' && s !== 'checking');
@@ -129,25 +79,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
       .sort((a, b) => {
         const statusA = modelStatus[a] || 'unchecked';
         const statusB = modelStatus[b] || 'unchecked';
-        
-        const score = (status: ModelStatus): number => {
-            switch (status) {
-                case 'available': return 0;
-                case 'checking': return 1;
-                case 'unchecked': return 2;
-                case 'unavailable': return 3;
-                default: return 4;
-            }
-        };
-
-        const scoreA = score(statusA);
-        const scoreB = score(statusB);
-
-        if (scoreA !== scoreB) {
-            return scoreA - scoreB;
-        }
-
-        return a.localeCompare(b);
+        const score = (status: ModelStatus): number => status === 'available' ? 0 : status === 'checking' ? 1 : status === 'unchecked' ? 2 : 3;
+        return score(statusA) - score(statusB) || a.localeCompare(b);
     });
   }, [textModels, modelStatus]);
 
@@ -156,145 +89,104 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
           .sort((a, b) => {
             const statusA = modelStatus[a] || 'unchecked';
             const statusB = modelStatus[b] || 'unchecked';
-            
-            const score = (status: ModelStatus): number => {
-                switch (status) {
-                    case 'available': return 0;
-                    case 'checking': return 1;
-                    case 'unchecked': return 2;
-                    case 'unavailable': return 3;
-                    default: return 4;
-                }
-            };
-
-            const scoreA = score(statusA);
-            const scoreB = score(statusB);
-
-            if (scoreA !== scoreB) {
-                return scoreA - scoreB;
-            }
-
-            return a.localeCompare(b);
+            const score = (status: ModelStatus): number => status === 'available' ? 0 : status === 'checking' ? 1 : status === 'unchecked' ? 2 : 3;
+            return score(statusA) - score(statusB) || a.localeCompare(b);
         });
     }, [imageModels, modelStatus]);
   
-  const audioModels = useMemo(() => sortedTextModels.filter(m => isAudioModel(m)), [sortedTextModels]);
-  const nonAudioModels = useMemo(() => sortedTextModels.filter(m => !isAudioModel(m)), [sortedTextModels]);
+  const renderModelOptions = (models: string[]) => {
+    return models.map(model => {
+        const status = modelStatus[model] || 'unchecked';
+        const symbol = status === 'available' ? '🟢' : status === 'unavailable' ? '🔴' : status === 'checking' ? '🟡' : '⚪️';
+        return <option key={model} value={model}>{symbol} {model}</option>;
+    });
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60" onClick={onClose}>
-      <div className="bg-shigen-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md relative animate-fade-in" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-shigen-gray-500 hover:text-shigen-gray-300 transition" aria-label="Close settings">
-          <CloseIcon className="w-6 h-6" />
-        </button>
-        <h2 className="text-xl font-semibold mb-6 text-shigen-gray-300">Settings</h2>
-        
-        <div className="space-y-6">
-          <div>
-            <label htmlFor="textModel" className="block text-sm font-medium text-shigen-gray-500 mb-1">Text Model</label>
-            <select id="textModel" name="textModel" value={settings.textModel} onChange={handleSelectChange} className="w-full bg-shigen-gray-700 border-shigen-gray-600 rounded-md p-2 text-shigen-gray-300 focus:ring-shigen-blue focus:border-shigen-blue transition">
-              {nonAudioModels.map(model => {
-                const status = modelStatus[model] || 'unchecked';
-                let indicator = '';
-                if (status === 'unavailable') indicator = ' ❌';
-                if (status === 'checking') indicator = '...';
-                if (status === 'available') indicator = ' ✅';
-
-                return (
-                  <option key={model} value={model} disabled={status === 'checking' || status === 'unavailable'}>
-                    {model}{indicator}
-                  </option>
-                );
-              })}
-            </select>
-            <div className="text-xs text-shigen-gray-500 mt-1.5 px-1 flex justify-between items-center">
-                <span>
-                    {someModelsChecked ? 'Status: ✅ Online, ❌ Offline.' : 'Check model status.'}
-                </span>
-                <button
-                    onClick={onCheckModels}
-                    disabled={isCheckingModels}
-                    className="flex items-center gap-1 text-xs text-shigen-blue hover:underline disabled:opacity-50 disabled:cursor-wait"
-                >
-                    {isCheckingModels && <SpinnerIcon className="w-3 h-3" />}
-                    {isCheckingModels ? 'Checking...' : 'Check Models'}
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center" onClick={onClose}>
+        <div 
+            ref={modalContentRef}
+            style={modalStyle}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            className="glassmorphic-surface rounded-t-3xl md:rounded-2xl shadow-strong w-full max-w-lg p-6 relative animate-slide-in-up md:animate-spring-in h-[90vh] md:h-auto flex flex-col touch-none" 
+            onClick={(e) => e.stopPropagation()}
+        >
+            <div className="flex-shrink-0 flex justify-between items-center mb-6">
+                <h2 className="text-xl font-semibold text-on-surface">Settings</h2>
+                <button onClick={onClose} className="p-2 -mr-2 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-variant transition" aria-label="Close">
+                    <CloseIcon className="w-6 h-6" />
                 </button>
             </div>
-          </div>
-          
-           <div>
-              <label htmlFor="audioModel" className="block text-sm font-medium text-shigen-gray-500 mb-1">Audio Model</label>
-              <select id="audioModel" name="audioModel" value={settings.audioModel} onChange={handleSelectChange} className="w-full bg-shigen-gray-700 border-shigen-gray-600 rounded-md p-2 text-shigen-gray-300 focus:ring-shigen-blue focus:border-shigen-blue transition">
-              {audioModels.map(model => {
-                const status = modelStatus[model] || 'unchecked';
-                let indicator = '';
-                if (status === 'unavailable') indicator = ' ❌';
-                if (status === 'checking') indicator = '...';
-                if (status === 'available') indicator = ' ✅';
+            
+            <div className="flex-grow overflow-y-auto -mx-6 px-6 touch-pan-y">
+                <div className="space-y-8">
+                    <section>
+                         <h3 className="text-base font-semibold text-on-surface-variant mb-3">Models</h3>
+                         <div className="space-y-4">
+                            <div>
+                                <label htmlFor="textModel" className="block text-sm font-medium text-on-surface-variant mb-1.5">Chat & Story Model</label>
+                                <select id="textModel" name="textModel" value={settings.textModel} onChange={handleSelectChange} className="w-full bg-surface-variant rounded-xl p-3 text-on-surface focus:ring-2 focus:ring-primary">
+                                    {renderModelOptions(sortedTextModels)}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="imageModel" className="block text-sm font-medium text-on-surface-variant mb-1.5">Image Generation Model</label>
+                                <select id="imageModel" name="imageModel" value={settings.imageModel} onChange={handleSelectChange} className="w-full bg-surface-variant rounded-xl p-3 text-on-surface focus:ring-2 focus:ring-primary">
+                                    {renderModelOptions(sortedImageModels)}
+                                </select>
+                            </div>
+                            <div>
+                                <button onClick={onCheckModels} disabled={isCheckingModels} className="w-full text-center px-4 py-2.5 rounded-full text-sm font-semibold bg-surface-variant text-on-surface-variant hover:bg-outline disabled:opacity-50 transition-colors">
+                                    {isCheckingModels ? <span className="flex items-center justify-center gap-2"><SpinnerIcon className="w-4 h-4" />Checking Models...</span> : `Check Model Status ${someModelsChecked ? '(Re-check)' : ''}`}
+                                </button>
+                            </div>
+                         </div>
+                    </section>
 
-                return (
-                  <option key={model} value={model} disabled={status === 'checking' || status === 'unavailable'}>
-                    {model}{indicator}
-                  </option>
-                );
-              })}
-            </select>
-           </div>
-           
-           <div>
-              <label htmlFor="audioVoice" className="block text-sm font-medium text-shigen-gray-500 mb-1">Voice (for OpenAI models)</label>
-              <div className="flex items-center gap-2">
-                <select 
-                  id="audioVoice" 
-                  name="audioVoice" 
-                  value={settings.audioVoice} 
-                  onChange={handleVoiceChangeAndPlayback}
-                  disabled={isVoicePreviewing} 
-                  className="w-full bg-shigen-gray-700 border-shigen-gray-600 rounded-md p-2 text-shigen-gray-300 focus:ring-shigen-blue focus:border-shigen-blue transition disabled:opacity-50"
-                >
-                  {audioVoices.map(voice => <option key={voice} value={voice}>{voice.charAt(0).toUpperCase() + voice.slice(1)}</option>)}
-                </select>
-                {isVoicePreviewing && <SpinnerIcon className="w-5 h-5 text-shigen-blue" />}
-              </div>
-            </div>
+                    <div className="border-t border-outline"></div>
+                    
+                    <section>
+                        <h3 className="text-base font-semibold text-on-surface-variant mb-3">Personalization</h3>
+                        <div className="space-y-4">
+                            <button onClick={onOpenPersonaManager} className="w-full text-center px-4 py-3 rounded-xl text-base font-semibold bg-surface-variant text-on-surface-variant hover:bg-outline disabled:opacity-50 transition-colors flex items-center justify-center gap-3">
+                                <UsersIcon className="w-5 h-5" />
+                                Manage AI Personas
+                            </button>
+                        </div>
+                    </section>
+                    
+                    <div className="border-t border-outline"></div>
 
-          <div>
-            <label htmlFor="imageModel" className="block text-sm font-medium text-shigen-gray-500 mb-1">Default Image Model</label>
-            <select id="imageModel" name="imageModel" value={settings.imageModel} onChange={handleSelectChange} className="w-full bg-shigen-gray-700 border-shigen-gray-600 rounded-md p-2 text-shigen-gray-300 focus:ring-shigen-blue focus:border-shigen-blue transition">
-              {sortedImageModels.map(model => {
-                  const status = modelStatus[model] || 'unchecked';
-                  let indicator = '';
-                  if (status === 'unavailable') indicator = ' ❌';
-                  if (status === 'checking') indicator = '...';
-                  if (status === 'available') indicator = ' ✅';
-
-                  return (
-                    <option key={model} value={model} disabled={status === 'checking' || status === 'unavailable'}>
-                      {model}{indicator}
-                    </option>
-                  );
-              })}
-            </select>
-          </div>
-          
-           <div>
-             <label htmlFor="theme" className="block text-sm font-medium text-shigen-gray-500 mb-1">Theme</label>
-             <select id="theme" name="theme" value={settings.theme} onChange={handleSelectChange} className="w-full bg-shigen-gray-700 border-shigen-gray-600 rounded-md p-2 text-shigen-gray-300 focus:ring-shigen-blue focus:border-shigen-blue transition">
-               {themes.map(theme => <option key={theme.id} value={theme.id}>{theme.name}</option>)}
-             </select>
-           </div>
-
-            <div className="border-t border-shigen-gray-700/50 pt-5">
-                 <button
-                    onClick={onOpenThemeGenerator}
-                    className="w-full flex items-center justify-center gap-2 text-sm px-3 py-2 bg-shigen-gray-700 hover:bg-shigen-gray-600 rounded-md transition-colors text-shigen-gray-300"
-                >
-                   <PaintBrushIcon className="w-5 h-5" />
-                   <span>AI Theme Generator</span>
-                </button>
+                     <section>
+                        <h3 className="text-base font-semibold text-on-surface-variant mb-3">Appearance</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                                 {themes.map(theme => (
+                                    <button key={theme.id} onClick={() => onSettingsChange({ ...settings, theme: theme.id, aiTheme: null })} className={`w-full p-2.5 rounded-lg border-2 transition-colors text-left ${settings.theme === theme.id && !settings.aiTheme ? 'border-primary' : 'border-outline'}`}>
+                                        <span className="font-semibold text-on-surface">{theme.name}</span>
+                                    </button>
+                                 ))}
+                            </div>
+                            <div className="flex flex-col gap-2">
+                               <button onClick={onOpenThemeGenerator} className="flex-1 flex flex-col items-center justify-center p-2 rounded-lg border-2 bg-gradient-to-br from-primary-container to-secondary transition-colors hover:border-primary/80 relative overflow-hidden group card-3d-effect">
+                                    <span className="font-semibold text-on-primary-container z-10">AI Theme</span>
+                                    <span className="text-xs text-on-primary-container/80 z-10">Generate with AI</span>
+                                    <PaintBrushIcon className="w-12 h-12 absolute -right-2 -bottom-2 text-primary/20 group-hover:scale-110 transition-transform z-0"/>
+                               </button>
+                               {settings.aiTheme && (
+                                    <button onClick={() => onSettingsChange({ ...settings, aiTheme: null })} className="text-xs text-center p-1.5 rounded-full bg-surface-variant text-on-surface-variant hover:bg-outline transition-colors">
+                                        Clear AI Theme
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                </div>
             </div>
         </div>
-      </div>
     </div>
   );
 };

@@ -4,95 +4,240 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SHIGEN-Style Chat</title>
+    <title>SHIGEN AI</title>
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#131314" />
+    <meta name="theme-color" content="#eff0f9" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        
         :root {
-            --bg-color-900: #131314;
-            --bg-color-800: #1e1f20;
-            --bg-color-700: #2c2d2f;
-            --bg-color-600: #363739;
-            --text-color-primary: #e8eaed;
-            --text-color-secondary: #5f6368;
-            --accent-color: #8ab4f8;
-            --font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            --font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
         }
 
         .theme-light {
-            --bg-color-900: #ffffff;
-            --bg-color-800: #f1f3f4;
-            --bg-color-700: #e8eaed;
-            --bg-color-600: #dadce0;
-            --text-color-primary: #202124;
-            --text-color-secondary: #5f6368;
-            --accent-color: #1a73e8;
+            --color-background: #f8f9fa; /* Very light gray */
+            --color-surface: #ffffff; /* White */
+            --color-surface-variant: #f1f3f4; /* Slightly off-white for different surfaces */
+            --color-primary: #6750a4; /* Material You-style purple */
+            --color-primary-container: #eaddff;
+            --color-secondary: #5f5b71;
+            --color-outline: #e0e0e0;
+            --color-on-background: #1c1b1f;
+            --color-on-surface: #1c1b1f;
+            --color-on-surface-variant: #49454f;
+            --color-on-primary: #ffffff;
+            --color-on-primary-container: #21005e;
+            --color-on-secondary: #ffffff;
+            --color-shadow: rgba(0, 0, 0, 0.05);
+            --color-shadow-strong: rgba(0, 0, 0, 0.1);
         }
 
-        .theme-rose-gold {
-            --bg-color-900: #4c3b4d;
-            --bg-color-800: #6d5d6e;
-            --bg-color-700: #8a7b8e;
-            --bg-color-600: #a999ab;
-            --text-color-primary: #f4eef5;
-            --text-color-secondary: #c9bbcb;
-            --accent-color: #e5c9e6;
+        .theme-dark {
+            --color-background: #121212;
+            --color-surface: #1e1e1e;
+            --color-surface-variant: #2c2c2c;
+            --color-primary: #d0bcff; /* A lighter purple for dark mode */
+            --color-primary-container: #4a4458;
+            --color-secondary: #c8c5d9;
+            --color-outline: #444444;
+            --color-on-background: #e6e1e5;
+            --color-on-surface: #e6e1e5;
+            --color-on-surface-variant: #cac4cf;
+            --color-on-primary: #381e72;
+            --color-on-primary-container: #eaddff;
+            --color-on-secondary: #332d41;
+            --color-shadow: rgba(0, 0, 0, 0.2);
+            --color-shadow-strong: rgba(0, 0, 0, 0.35);
         }
 
-        .theme-ocean-deep {
-            --bg-color-900: #0B132B;
-            --bg-color-800: #1C2541;
-            --bg-color-700: #3A506B;
-            --bg-color-600: #5BC0BE;
-            --text-color-primary: #FFFFFF;
-            --text-color-secondary: #8D99AE;
-            --accent-color: #6FFFE9;
+        .theme-oceanic {
+            --color-background: #0a192f;
+            --color-surface: #112240;
+            --color-surface-variant: #1d3557;
+            --color-primary: #64ffda;
+            --color-primary-container: #154f49;
+            --color-secondary: #8892b0;
+            --color-outline: #2c466e;
+            --color-on-background: #ccd6f6;
+            --color-on-surface: #ccd6f6;
+            --color-on-surface-variant: #a8b2d1;
+            --color-on-primary: #0a192f;
+            --color-on-primary-container: #b3ffee;
+            --color-on-secondary: #ffffff;
+            --color-shadow: rgba(2, 12, 27, 0.7);
+            --color-shadow-strong: rgba(2, 12, 27, 0.9);
+        }
+
+        .theme-sunset {
+            --color-background: #2a2a3e;
+            --color-surface: #3e3e5a;
+            --color-surface-variant: #525276;
+            --color-primary: #ff7e5f;
+            --color-primary-container: #7f3f2f;
+            --color-secondary: #feb47b;
+            --color-outline: #666692;
+            --color-on-background: #e0e0eb;
+            --color-on-surface: #e0e0eb;
+            --color-on-surface-variant: #c0c0d5;
+            --color-on-primary: #ffffff;
+            --color-on-primary-container: #ffcbbd;
+            --color-on-secondary: #2a2a3e;
+            --color-shadow: rgba(0, 0, 0, 0.2);
+            --color-shadow-strong: rgba(0, 0, 0, 0.35);
+        }
+        
+        .theme-monochrome {
+            --color-background: #111111;
+            --color-surface: #1c1c1c;
+            --color-surface-variant: #2d2d2d;
+            --color-primary: #ffffff;
+            --color-primary-container: #3d3d3d;
+            --color-secondary: #b1b1b1;
+            --color-outline: #444444;
+            --color-on-background: #f1f1f1;
+            --color-on-surface: #f1f1f1;
+            --color-on-surface-variant: #c1c1c1;
+            --color-on-primary: #000000;
+            --color-on-primary-container: #ffffff;
+            --color-on-secondary: #000000;
+            --color-shadow: rgba(0, 0, 0, 0.3);
+            --color-shadow-strong: rgba(0, 0, 0, 0.5);
         }
 
         body {
-            background-color: var(--bg-color-900);
-            color: var(--text-color-primary);
+            background-color: var(--color-background);
+            background-image: var(--color-wallpaper, none);
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            color: var(--color-on-background);
             font-family: var(--font-family);
             transition: background-color 0.3s, color 0.3s;
         }
 
+        .glassmorphic {
+          background-color: color-mix(in srgb, var(--color-surface-variant) 70%, transparent) !important;
+          -webkit-backdrop-filter: blur(16px);
+          backdrop-filter: blur(16px);
+          border: 1px solid color-mix(in srgb, var(--color-outline) 50%, transparent) !important;
+        }
+        
+        .glassmorphic-surface {
+          background-color: color-mix(in srgb, var(--color-surface) 85%, transparent) !important;
+          -webkit-backdrop-filter: blur(24px);
+          backdrop-filter: blur(24px);
+          border: 1px solid color-mix(in srgb, var(--color-outline) 50%, transparent) !important;
+        }
+
+        .card-3d-effect {
+            transform-style: preserve-3d;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .card-3d-effect:hover {
+            transform: perspective(1000px) rotateX(5deg) rotateY(-5deg) scale(1.05);
+        }
+
         @keyframes fadeIn {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
         @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(12px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        @keyframes revealTopToBottom {
-            from { clip-path: inset(0 0 100% 0); }
-            to { clip-path: inset(0 0 0 0); }
-        }
         @keyframes springIn {
-            0% { opacity: 0; transform: scale(0.8) translateY(10px); }
-            80% { opacity: 1; transform: scale(1.05) translateY(-5px); }
-            100% { opacity: 1; transform: scale(1) translateY(0); }
+            0% { opacity: 0; transform: scale(0.9) translateY(10px); }
+            80% { opacity: 1; transform: scale(1.03); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes messageIn {
+            from { opacity: 0; transform: translateY(15px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
         @keyframes subtleBounce {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-3px); }
         }
+        @keyframes shimmer {
+            100% {
+                transform: translateX(100%);
+            }
+        }
+        @keyframes pulse-slow {
+            50% {
+                opacity: 0.5;
+            }
+        }
+        @keyframes slideInUp {
+            from { transform: translateY(100%); opacity: 0.8; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes water-open {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+                clip-path: circle(20% at 50% 100%);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+                clip-path: circle(150% at 50% 100%);
+            }
+        }
+
+        .shimmer {
+            position: relative;
+            overflow: hidden;
+        }
+        .shimmer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            transform: translateX(-100%);
+            background-image: linear-gradient(90deg,
+                rgba(255, 255, 255, 0) 0,
+                rgba(255, 255, 255, 0.05) 20%,
+                rgba(255, 255, 255, 0.1) 60%,
+                rgba(255, 255, 255, 0)
+            );
+            animation: shimmer 2s infinite;
+        }
+
         .animate-fade-in {
-            animation: fadeIn 0.2s ease-out forwards;
+            animation: fadeIn 0.3s ease-out forwards;
         }
         .animate-fade-in-up {
-            animation: fadeInUp 0.3s ease-out forwards;
-        }
-        .animate-reveal {
-            animation: revealTopToBottom 0.5s ease-in-out forwards;
+            animation: fadeInUp 0.4s ease-out forwards;
         }
         .animate-spring-in {
             animation: springIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
+        .animate-message-in {
+            animation: messageIn 0.4s ease-out forwards;
+        }
         .animate-subtle-bounce {
             animation: subtleBounce 0.6s ease-in-out forwards;
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .animate-slide-in-up {
+            animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .animate-slide-in-right {
+            animation: slideInRight 0.3s ease-out forwards;
+        }
+        .animate-water-open {
+            animation: water-open 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
         }
     </style>
     <script>
@@ -100,16 +245,31 @@
         theme: {
           extend: {
             colors: {
-              'shigen-gray-900': 'var(--bg-color-900)',
-              'shigen-gray-800': 'var(--bg-color-800)',
-              'shigen-gray-700': 'var(--bg-color-700)',
-              'shigen-gray-600': 'var(--bg-color-600)',
-              'shigen-gray-500': 'var(--text-color-secondary)',
-              'shigen-gray-300': 'var(--text-color-primary)',
-              'shigen-blue': 'var(--accent-color)',
+              'background': 'var(--color-background)',
+              'surface': 'var(--color-surface)',
+              'surface-variant': 'var(--color-surface-variant)',
+              'primary': 'var(--color-primary)',
+              'primary-container': 'var(--color-primary-container)',
+              'secondary': 'var(--color-secondary)',
+              'outline': 'var(--color-outline)',
+              'on-background': 'var(--color-on-background)',
+              'on-surface': 'var(--color-on-surface)',
+              'on-surface-variant': 'var(--color-on-surface-variant)',
+              'on-primary': 'var(--color-on-primary)',
+              'on-primary-container': 'var(--color-on-primary-container)',
+              'on-secondary': 'var(--color-on-secondary)',
             },
             fontFamily: {
-                sans: ['ui-sans-serif', 'system-ui'],
+                sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+            },
+            borderRadius: {
+              'xl': '1rem',
+              '2xl': '1.5rem',
+              '3xl': '2rem',
+            },
+             boxShadow: {
+              'soft': '0 4px 12px var(--color-shadow)',
+              'strong': '0 8px 24px var(--color-shadow-strong)',
             }
           },
         },

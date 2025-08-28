@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import SignalIcon from './icons/SignalIcon';
@@ -75,16 +76,6 @@ const TextFeed: React.FC<TextFeedProps> = ({ isOpen, onClose, onPromptSelect }) 
         onPromptSelect(prompt);
     };
 
-    const animationStyle = `
-        @keyframes slideInRight {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-        .animate-slide-in-right {
-            animation: slideInRight 0.3s ease-out forwards;
-        }
-    `;
-    
     const renderContent = () => {
         if (connectionStatus === 'error') {
             return (
@@ -99,10 +90,10 @@ const TextFeed: React.FC<TextFeedProps> = ({ isOpen, onClose, onPromptSelect }) 
                 <button
                     key={item.id}
                     onClick={() => handlePromptClick(item.prompt)}
-                    className="w-full text-left p-3 bg-shigen-gray-900/50 rounded-lg hover:bg-shigen-gray-700 transition-colors group animate-fade-in"
+                    className="w-full text-left p-3 bg-surface rounded-xl hover:bg-surface-variant transition-colors group animate-fade-in"
                     aria-label={`Use prompt: ${item.prompt}`}
                 >
-                    <p className="text-sm text-shigen-gray-400 font-mono group-hover:text-shigen-gray-300 transition-colors">{item.prompt}</p>
+                    <p className="text-sm text-on-surface-variant font-mono group-hover:text-on-surface transition-colors">{item.prompt}</p>
                 </button>
             ));
         }
@@ -113,7 +104,7 @@ const TextFeed: React.FC<TextFeedProps> = ({ isOpen, onClose, onPromptSelect }) 
             idle: 'Press "Start Feed" to see live prompts.'
         };
         return (
-            <div className="flex items-center justify-center h-full text-shigen-gray-600">
+            <div className="flex items-center justify-center h-full text-on-surface-variant">
                 <p>{statusMap[connectionStatus]}</p>
             </div>
         );
@@ -121,13 +112,12 @@ const TextFeed: React.FC<TextFeedProps> = ({ isOpen, onClose, onPromptSelect }) 
 
     return (
         <div className={`fixed inset-0 z-40 transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} >
-            <style>{animationStyle}</style>
-            <div className="absolute inset-0 bg-black bg-opacity-60" onClick={onClose}></div>
-            <div className={`fixed top-0 right-0 h-full bg-shigen-gray-800 w-full max-w-md p-4 z-50 transform shadow-2xl flex flex-col ${isOpen ? 'animate-slide-in-right' : 'translate-x-full'}`}>
+            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose}></div>
+            <div className={`fixed top-0 right-0 h-full bg-background w-full max-w-md p-4 z-50 transform shadow-2xl flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'} border-l border-outline`}>
                 <div className="flex items-center justify-between mb-4 flex-shrink-0">
                     <div className="flex items-center space-x-2">
-                        <SignalIcon className="w-6 h-6 text-shigen-blue" />
-                        <h2 className="text-xl font-semibold text-shigen-gray-300">Text Prompt Feed</h2>
+                        <SignalIcon className="w-6 h-6 text-primary" />
+                        <h2 className="text-xl font-semibold text-on-surface">Text Prompt Feed</h2>
                     </div>
                      <div className="flex items-center space-x-2">
                         <button 
@@ -140,12 +130,12 @@ const TextFeed: React.FC<TextFeedProps> = ({ isOpen, onClose, onPromptSelect }) 
                         >
                             {isFeedActive ? 'Stop Feed' : 'Start Feed'}
                         </button>
-                        <button onClick={onClose} className="p-2 rounded-full hover:bg-shigen-gray-700 transition" aria-label="Close text feed">
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-surface-variant transition text-on-surface-variant" aria-label="Close text feed">
                             <CloseIcon className="h-6 w-6" />
                         </button>
                     </div>
                 </div>
-                <p className="text-sm text-shigen-gray-500 mb-4 flex-shrink-0 border-b border-shigen-gray-700/50 pb-4">
+                <p className="text-sm text-on-surface-variant mb-4 flex-shrink-0 border-b border-outline pb-4">
                     See prompts others are using. Click any prompt to try it yourself.
                 </p>
                 <div className="flex-grow overflow-y-auto space-y-2 -mr-2 pr-2">

@@ -1,13 +1,13 @@
 
 
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import Sidebar from './components/Sidebar';
+import MenuSheet from './components/Sidebar'; 
 import ChatView from './components/ChatView';
 import ImageGeneratorView from './components/ImageGeneratorView';
 import StoryView from './components/StoryView';
 import SettingsModal from './components/SettingsModal';
-import SystemInstructionModal from './components/SystemInstructionModal';
+import ChatSettingsModal from './components/ChatSettingsModal';
+import PersonaManagerModal from './components/PersonaManagerModal';
 import ImageFeed from './components/ImageFeed';
 import TextFeed from './components/TextFeed';
 import ImageViewerModal from './components/ImageViewerModal';
@@ -18,24 +18,65 @@ import IosInstallBanner from './components/IosInstallBanner';
 import useLocalStorage from './hooks/useLocalStorage';
 import useOnlineStatus from './hooks/useOnlineStatus';
 import { 
-    fetchTextModels, fetchImageModels, generateTextStream, generateText, getImageUrl, 
-    isAudioModel, getAudioUrl, refineImagePrompt, isImageGenRequest,
-    checkModelStatus, checkImageModelStatus, generateStoryContinuation
+    fetchTextModels, fetchImageModels, generateTextStream, getImageUrl, 
+    refineImagePrompt, isImageGenRequest, generateText,
+    checkModelStatus, checkImageModelStatus, generateStoryContinuation, generateCharacterDescription, generateAudio
 } from './services/pollinations';
 import type { 
-    ChatSession, Settings, Message, ModelStatusMap, ImageContent,
+    ChatSession, Settings, Message, ModelStatusMap, ImageContent, Persona,
     ViewMode, ImageGenConfig, ImageGeneration, FavoriteImage, Notification, 
-    ViewerImage, ImageSession, RefineOption, GeneratedTheme, StorySession, StoryBeat
+    ViewerImage, ImageSession, RefineOption, GeneratedTheme, StorySession, StoryBeat, 
+    HistoryItem, Theme, FavoriteItem, FavoriteMessage, FavoriteStoryBeat
 } from './types';
 import { triggerHapticFeedback } from './lib/haptics';
+import ChatBubbleIcon from './components/icons/ChatBubbleIcon';
+import ImageIcon from './components/icons/ImageIcon';
+import BookOpenIcon from './components/icons/BookOpenIcon';
+import MenuIcon from './components/icons/MenuIcon';
 
 type InstallStatus = 'unsupported' | 'available' | 'installed' | 'ios';
 
+const BottomNavBar: React.FC<{
+    activeView: ViewMode;
+    onViewChange: (view: ViewMode) => void;
+    onMenuClick: () => void;
+}> = ({ activeView, onViewChange, onMenuClick }) => {
+    const navItems = [
+        { view: 'chat' as ViewMode, icon: <ChatBubbleIcon className="w-6 h-6"/>, label: "Chat" },
+        { view: 'image-generator' as ViewMode, icon: <ImageIcon className="w-6 h-6"/>, label: "Images" },
+        { view: 'story' as ViewMode, icon: <BookOpenIcon className="w-6 h-6"/>, label: "Story" },
+    ];
+    return (
+        <nav className="flex-shrink-0 w-full bg-surface/80 backdrop-blur-md border-t border-outline shadow-strong z-20">
+            <div className="flex justify-around items-center h-20 max-w-md mx-auto">
+                {navItems.map(item => {
+                    const isActive = activeView === item.view;
+                    return (
+                        <button key={item.view} onClick={() => onViewChange(item.view)} className="flex flex-col items-center justify-center w-20 h-full text-on-surface-variant transition-colors duration-200">
+                           <div className={`flex items-center justify-center p-3 rounded-full transition-all duration-300 ${isActive ? 'bg-primary-container text-on-primary-container scale-110' : ''}`}>
+                                {item.icon}
+                           </div>
+                           <span className={`text-xs font-semibold mt-1 transition-colors ${isActive ? 'text-on-surface' : ''}`}>{item.label}</span>
+                        </button>
+                    )
+                })}
+                 <button onClick={onMenuClick} className="flex flex-col items-center justify-center w-20 h-full text-on-surface-variant transition-colors duration-200">
+                   <div className="flex items-center justify-center p-3 rounded-full">
+                        <MenuIcon className="w-6 h-6"/>
+                   </div>
+                   <span className="text-xs font-semibold mt-1">Menu</span>
+                </button>
+            </div>
+        </nav>
+    )
+}
+
 const App: React.FC = () => {
-    const [viewMode, setViewMode] = useLocalStorage<ViewMode>('view-mode-v1', 'chat');
-    const [isSidebarOpen, setSidebarOpen] = useState(false);
+    const [viewMode, setViewMode] = useLocalStorage<ViewMode>('shigen-view-mode-v4', 'chat');
+    const [isMenuOpen, setMenuOpen] = useState(false);
     const [isSettingsOpen, setSettingsOpen] = useState(false);
-    const [isInstructionModalOpen, setInstructionModalOpen] = useState(false);
+    const [isChatSettingsOpen, setChatSettingsOpen] = useState(false);
+    const [isPersonaManagerOpen, setPersonaManagerOpen] = useState(false);
     const [isImageFeedOpen, setImageFeedOpen] = useState(false);
     const [isTextFeedOpen, setTextFeedOpen] = useState(false);
     const [isFavoritesOpen, setFavoritesOpen] = useState(false);
@@ -43,34 +84,38 @@ const App: React.FC = () => {
     
     const isOnline = useOnlineStatus();
 
-    const [settings, setSettings] = useLocalStorage<Settings>('chat-settings-v2', {
+    const [settings, setSettings] = useLocalStorage<Settings>('shigen-settings-v6', {
         textModel: 'openai-fast',
-        imageModel: 'turbo',
-        audioModel: 'openai-audio',
-        audioVoice: 'alloy',
-        theme: 'shigen',
+        imageModel: 'flux',
+        theme: 'dark',
+        aiTheme: null,
     });
 
     const [textModels, setTextModels] = useState<string[]>([]);
     const [imageModels, setImageModels] = useState<string[]>([]);
-    const [modelStatus, setModelStatus] = useLocalStorage<ModelStatusMap>('text-model-status', {});
+    const [modelStatus, setModelStatus] = useLocalStorage<ModelStatusMap>('shigen-model-status-v2', {});
     const [isCheckingModels, setIsCheckingModels] = useState(false);
     
-    const [chatSessions, setChatSessions] = useLocalStorage<ChatSession[]>('chat-sessions-v1', []);
-    const [activeChatId, setActiveChatId] = useLocalStorage<string | null>('active-chat-id-v1', null);
+    const [personas, setPersonas] = useLocalStorage<Persona[]>('shigen-personas-v1', []);
+    const [chatSessions, setChatSessions] = useLocalStorage<ChatSession[]>('shigen-chat-sessions-v3', []);
+    const [activeChatId, setActiveChatId] = useLocalStorage<string | null>('shigen-active-chat-id-v3', null);
     
-    const [imageSessions, setImageSessions] = useLocalStorage<ImageSession[]>('image-sessions-v1', []);
-    const [activeImageSessionId, setActiveImageSessionId] = useLocalStorage<string | null>('active-image-session-id-v1', null);
+    const [imageSessions, setImageSessions] = useLocalStorage<ImageSession[]>('shigen-image-sessions-v3', []);
+    const [activeImageSessionId, setActiveImageSessionId] = useLocalStorage<string | null>('shigen-active-image-session-id-v3', null);
 
-    const [storySessions, setStorySessions] = useLocalStorage<StorySession[]>('story-sessions-v1', []);
-    const [activeStorySessionId, setActiveStorySessionId] = useLocalStorage<string | null>('active-story-session-id-v1', null);
-
-    const [isGenerating, setIsGenerating] = useState(false);
+    const [storySessions, setStorySessions] = useLocalStorage<StorySession[]>('shigen-story-sessions-v3', []);
+    const [activeStorySessionId, setActiveStorySessionId] = useLocalStorage<string | null>('shigen-active-story-session-id-v3', null);
+    
+    const [isChatGenerating, setIsChatGenerating] = useState(false);
+    const [isImageGenerating, setIsImageGenerating] = useState(false);
+    const [isStoryGenerating, setIsStoryGenerating] = useState(false);
+    
+    const [pendingGeneration, setPendingGeneration] = useState<ImageGenConfig | null>(null);
     const [imageToModify, setImageToModify] = useState<ImageContent | null>(null);
 
     const [promptFromFeed, setPromptFromFeed] = useState<{ prompt: string, timestamp: number }>({ prompt: '', timestamp: 0 });
     
-    const [favoritedImages, setFavoritedImages] = useLocalStorage<FavoriteImage[]>('favorited-images', []);
+    const [favoritedImages, setFavoritedImages] = useLocalStorage<FavoriteImage[]>('shigen-favorited-images-v2', []);
     const [viewingImages, setViewingImages] = useState<{ images: ViewerImage[], startIndex: number } | null>(null);
     const [reEditRequest, setReEditRequest] = useState<ImageGenConfig | null>(null);
 
@@ -79,15 +124,56 @@ const App: React.FC = () => {
     const [showIosBanner, setShowIosBanner] = useState(false);
 
     const abortControllerRef = useRef<AbortController | null>(null);
-    const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+    const [customUserDp, setCustomUserDp] = useLocalStorage<string | null>('shigen-custom-user-dp-v2', null);
+
     const [currentlyPlayingMessageId, setCurrentlyPlayingMessageId] = useState<string | null>(null);
-    const [customUserDp, setCustomUserDp] = useLocalStorage<string | null>('custom-user-dp-v1', null);
+    const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
 
     const activeChat = useMemo(() => chatSessions.find(session => session.id === activeChatId), [chatSessions, activeChatId]);
     const activeImageSession = useMemo(() => imageSessions.find(session => session.id === activeImageSessionId), [imageSessions, activeImageSessionId]);
     const activeStorySession = useMemo(() => storySessions.find(session => session.id === activeStorySessionId), [storySessions, activeStorySessionId]);
+    const activePersona = useMemo(() => personas.find(p => p.id === activeChat?.personaId), [personas, activeChat]);
     
     const favoritedImageUrls = useMemo(() => new Set(favoritedImages.map(fav => fav.url)), [favoritedImages]);
+    
+    const favorites = useMemo((): FavoriteItem[] => {
+        const favImages: FavoriteItem[] = favoritedImages;
+        
+        const favMessages: FavoriteItem[] = chatSessions.flatMap(session => 
+            session.messages
+                .filter(m => m.isFavorited && m.type === 'text')
+                .map((m): FavoriteMessage => ({
+                    type: 'message',
+                    id: m.id,
+                    content: m.content as string,
+                    sessionId: session.id,
+                    sessionTitle: session.title,
+                    personaId: session.personaId,
+                }))
+        );
+
+        const favStoryBeats: FavoriteItem[] = storySessions.flatMap(session =>
+            session.beats
+                .filter(b => b.isFavorited)
+                .map((b): FavoriteStoryBeat => ({
+                    type: 'story-beat',
+                    id: b.id,
+                    storyText: b.storyText,
+                    imageUrl: b.imageUrl,
+                    sessionId: session.id,
+                    sessionTitle: session.title,
+                }))
+        );
+        return [...favImages, ...favMessages, ...favStoryBeats];
+    }, [favoritedImages, chatSessions, storySessions]);
+    
+    const unifiedHistory = useMemo((): HistoryItem[] => {
+        const chats: HistoryItem[] = chatSessions.map(s => ({ id: s.id, title: s.title, type: 'chat', timestamp: s.timestamp }));
+        const images: HistoryItem[] = imageSessions.map(s => ({ id: s.id, title: s.title, type: 'image-generator', timestamp: s.timestamp }));
+        const stories: HistoryItem[] = storySessions.map(s => ({ id: s.id, title: s.title, type: 'story', timestamp: s.timestamp }));
+        return [...chats, ...images, ...stories].sort((a, b) => b.timestamp - a.timestamp);
+    }, [chatSessions, imageSessions, storySessions]);
 
     const addToast = useCallback((message: string, type: Notification['type'] = 'info') => {
         const id = `toast-${Date.now()}`;
@@ -109,15 +195,6 @@ const App: React.FC = () => {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/service-worker.js');
             });
-        }
-        audioPlayerRef.current = new Audio();
-        const player = audioPlayerRef.current;
-        const onEnded = () => setCurrentlyPlayingMessageId(null);
-        player.addEventListener('ended', onEnded);
-        player.addEventListener('error', onEnded);
-        return () => {
-            player.removeEventListener('ended', onEnded);
-            player.removeEventListener('error', onEnded);
         }
     }, []);
 
@@ -155,46 +232,49 @@ const App: React.FC = () => {
     const updateStorySession = useCallback((id: string, updateFn: (session: StorySession) => StorySession) => {
         setStorySessions(prev => prev.map(s => s.id === id ? updateFn(s) : s));
     }, [setStorySessions]);
-
-    const createNewChat = useCallback(() => {
-        const newChat: ChatSession = { id: `chat-${Date.now()}`, title: 'New Chat', messages: [] };
-        setChatSessions(prev => [newChat, ...prev]);
-        setActiveChatId(newChat.id);
-        setSidebarOpen(false);
-        setImageToModify(null);
-        setViewMode('chat');
-    }, [setChatSessions, setActiveChatId, setViewMode]);
     
-    const createNewImageSession = useCallback(() => {
-        const newSession: ImageSession = { id: `img-session-${Date.now()}`, title: 'New Image Session', generations: [] };
-        setImageSessions(prev => [newSession, ...prev]);
-        setActiveImageSessionId(newSession.id);
-        setSidebarOpen(false);
-        setViewMode('image-generator');
-    }, [setImageSessions, setActiveImageSessionId, setViewMode]);
-
-    const createNewStorySession = useCallback(() => {
-        const newSession: StorySession = { id: `story-${Date.now()}`, title: 'New Story', premise: '', beats: [] };
-        setStorySessions(prev => [newSession, ...prev]);
-        setActiveStorySessionId(newSession.id);
-        setSidebarOpen(false);
-        setViewMode('story');
-    }, [setStorySessions, setActiveStorySessionId, setViewMode]);
+    const handleNewSession = useCallback((type: ViewMode) => {
+        const timestamp = Date.now();
+        if (type === 'chat') {
+            const newChat: ChatSession = { id: `chat-${timestamp}`, title: 'New Chat', messages: [], timestamp, personaId: null };
+            setChatSessions(prev => [newChat, ...prev]);
+            setActiveChatId(newChat.id);
+        } else if (type === 'image-generator') {
+            const newSession: ImageSession = { id: `img-session-${timestamp}`, title: 'New Image Session', generations: [], timestamp };
+            setImageSessions(prev => [newSession, ...prev]);
+            setActiveImageSessionId(newSession.id);
+        } else if (type === 'story') {
+            const newSession: StorySession = { id: `story-${timestamp}`, title: 'New Story', premise: '', characterDescription: '', beats: [], timestamp };
+            setStorySessions(prev => [newSession, ...prev]);
+            setActiveStorySessionId(newSession.id);
+        }
+        setMenuOpen(false);
+        setImageToModify(null);
+        setViewMode(type);
+    }, [setChatSessions, setActiveChatId, setImageSessions, setActiveImageSessionId, setStorySessions, setActiveStorySessionId, setViewMode]);
+    
+    const handleSelectHistoryItem = (id: string, type: ViewMode) => {
+        if (type === 'chat') setActiveChatId(id);
+        else if (type === 'image-generator') setActiveImageSessionId(id);
+        else if (type === 'story') setActiveStorySessionId(id);
+        setViewMode(type);
+        setMenuOpen(false);
+    }
     
     useEffect(() => {
         if (viewMode === 'chat' && chatSessions.length > 0 && !activeChatId) setActiveChatId(chatSessions[0].id);
-        else if (viewMode === 'chat' && chatSessions.length === 0) createNewChat();
-    }, [viewMode, activeChatId, chatSessions, setActiveChatId, createNewChat]);
+        else if (viewMode === 'chat' && chatSessions.length === 0) handleNewSession('chat');
+    }, [viewMode, activeChatId, chatSessions, setActiveChatId, handleNewSession]);
     
     useEffect(() => {
         if (viewMode === 'image-generator' && imageSessions.length > 0 && !activeImageSessionId) setActiveImageSessionId(imageSessions[0].id);
-        else if (viewMode === 'image-generator' && imageSessions.length === 0) createNewImageSession();
-    }, [viewMode, activeImageSessionId, imageSessions, setActiveImageSessionId, createNewImageSession]);
+        else if (viewMode === 'image-generator' && imageSessions.length === 0) handleNewSession('image-generator');
+    }, [viewMode, activeImageSessionId, imageSessions, setActiveImageSessionId, handleNewSession]);
 
     useEffect(() => {
         if (viewMode === 'story' && storySessions.length > 0 && !activeStorySessionId) setActiveStorySessionId(storySessions[0].id);
-        else if (viewMode === 'story' && storySessions.length === 0) createNewStorySession();
-    }, [viewMode, activeStorySessionId, storySessions, setActiveStorySessionId, createNewStorySession]);
+        else if (viewMode === 'story' && storySessions.length === 0) handleNewSession('story');
+    }, [viewMode, activeStorySessionId, storySessions, setActiveStorySessionId, handleNewSession]);
     
     useEffect(() => {
         Promise.all([fetchTextModels(), fetchImageModels()]).then(([{models: fetchedTextModels, statuses}, fetchedImageModels]) => {
@@ -205,7 +285,7 @@ const App: React.FC = () => {
                 setSettings(s => ({ ...s, textModel: fetchedTextModels[0] || '' }));
             }
             if (!settings.imageModel || !fetchedImageModels.includes(settings.imageModel)) {
-                setSettings(s => ({ ...s, imageModel: fetchedImageModels[0] || '' }));
+                setSettings(s => ({ ...s, imageModel: fetchedImageModels.find(m => m.includes('flux')) || fetchedImageModels[0] || '' }));
             }
         });
     }, [setSettings, setModelStatus]);
@@ -213,7 +293,10 @@ const App: React.FC = () => {
     const handleCancelGeneration = () => {
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
-            setIsGenerating(false);
+            setIsChatGenerating(false);
+            setIsImageGenerating(false);
+            setIsStoryGenerating(false);
+            setPendingGeneration(null);
         }
     };
 
@@ -232,7 +315,7 @@ const App: React.FC = () => {
     
     const handleTextGeneration = useCallback(async (history: Message[], systemInstruction?: string, messageToReplaceId?: string) => {
         if (!activeChatId) return;
-        setIsGenerating(true);
+        setIsChatGenerating(true);
         abortControllerRef.current = new AbortController();
 
         const loadingMessageId = messageToReplaceId || `bot-loading-${Date.now()}`;
@@ -266,7 +349,7 @@ const App: React.FC = () => {
                 messages: chat.messages.map(m => m.id === loadingMessageId ? { ...m, id: `bot-error-${Date.now()}`, type: 'error', content: friendlyError } : m)
             }));
         } finally {
-            setIsGenerating(false);
+            setIsChatGenerating(false);
             abortControllerRef.current = null;
         }
     }, [activeChatId, settings.textModel, updateChat]);
@@ -278,16 +361,23 @@ const App: React.FC = () => {
             return;
         }
 
-        setIsGenerating(true);
+        const generationInChat = viewMode === 'chat' && activeChatId;
+        const generationInImage = viewMode === 'image-generator' && activeImageSessionId;
+
+        if (generationInChat) setIsChatGenerating(true);
+        if (generationInImage) setIsImageGenerating(true);
+
+        if (generationInImage) setPendingGeneration(config);
+        
         abortControllerRef.current = new AbortController();
 
         const loadingMessageId = messageToReplaceId || `bot-loading-${Date.now()}`;
 
-        if (viewMode === 'chat' && activeChatId) {
+        if (generationInChat) {
+            const loadingMessage: Message = { id: loadingMessageId, role: 'bot', type: 'loading', content: `IMAGE_GENERATION_LOADING::${config.numImages}` };
             if (messageToReplaceId) {
-                updateChat(activeChatId, chat => ({ ...chat, messages: chat.messages.map(m => m.id === loadingMessageId ? { ...m, content: 'Generating...' } : m) }));
+                updateChat(activeChatId, chat => ({ ...chat, messages: chat.messages.map(m => m.id === loadingMessageId ? loadingMessage : m) }));
             } else {
-                const loadingMessage: Message = { id: loadingMessageId, role: 'bot', type: 'loading', content: 'Generating...' };
                 updateChat(activeChatId, chat => ({ ...chat, messages: [...chat.messages, loadingMessage] }));
             }
         }
@@ -306,19 +396,19 @@ const App: React.FC = () => {
 
             const imageContent: ImageContent = { urls, config };
             
-            if (viewMode === 'chat' && activeChatId) {
+            if (generationInChat) {
                  updateChat(activeChatId, chat => ({
                     ...chat,
                     messages: chat.messages.map(m => m.id === loadingMessageId ? { ...m, id: `bot-img-${Date.now()}`, type: 'image', content: imageContent } : m)
                 }));
-            } else if (viewMode === 'image-generator' && activeImageSessionId) {
+            } else if (generationInImage) {
                 const newGeneration: ImageGeneration = { id: `gen-${Date.now()}`, config, imageContent, timestamp: Date.now() };
                 updateImageSession(activeImageSessionId, session => ({...session, generations: [newGeneration, ...session.generations]}));
             }
 
         } catch (error) {
             const friendlyError = handleFriendlyError(error, config.model);
-            if (viewMode === 'chat' && activeChatId) {
+            if (generationInChat) {
                 updateChat(activeChatId, chat => ({
                     ...chat,
                     messages: chat.messages.map(m => m.id === loadingMessageId ? { ...m, id: `bot-error-${Date.now()}`, type: 'error', content: friendlyError } : m)
@@ -327,17 +417,21 @@ const App: React.FC = () => {
                 addToast(friendlyError, 'error');
             }
         } finally {
-            setIsGenerating(false);
+            if (generationInChat) setIsChatGenerating(false);
+            if (generationInImage) {
+                setIsImageGenerating(false);
+                setPendingGeneration(null);
+            }
             abortControllerRef.current = null;
         }
     }, [activeChatId, activeImageSessionId, viewMode, updateChat, updateImageSession, addToast]);
     
     const handleChatImageGeneration = useCallback(async (modificationRequest: string, imageToEdit: ImageContent) => {
         if (!activeChatId) return;
-        setIsGenerating(true);
+        setIsChatGenerating(true);
         abortControllerRef.current = new AbortController();
 
-        const loadingMessage: Message = { id: `bot-loading-${Date.now()}`, role: 'bot', type: 'loading', content: 'Updating image...' };
+        const loadingMessage: Message = { id: `bot-loading-${Date.now()}`, role: 'bot', type: 'loading', content: `IMAGE_GENERATION_LOADING::${imageToEdit.config.numImages}` };
         updateChat(activeChatId, chat => ({ ...chat, messages: [...chat.messages, loadingMessage] }));
         
         try {
@@ -367,7 +461,7 @@ const App: React.FC = () => {
                 messages: chat.messages.map(m => m.id === loadingMessage.id ? { ...m, id: `bot-error-${Date.now()}`, type: 'error', content: friendlyError } : m)
             }));
         } finally {
-            setIsGenerating(false);
+            setIsChatGenerating(false);
             abortControllerRef.current = null;
             setImageToModify(null);
         }
@@ -386,13 +480,20 @@ const App: React.FC = () => {
 
     }, [activeChatId, settings.imageModel, handleImageGeneration]);
     
-    const handleSendMessage = useCallback((prompt: string, options: { imageToEdit?: ImageContent, numImages?: number }) => {
+    const handleSendMessage = useCallback((prompt: string, options: { imageToEdit?: ImageContent }) => {
         if (!activeChatId || !activeChat) return;
 
-        const { imageToEdit, numImages = 1 } = options;
+        const { imageToEdit } = options;
         setImageToModify(null);
 
         const userMessage: Message = { id: `user-${Date.now()}`, role: 'user', type: 'text', content: prompt };
+        
+        let systemInstruction = activeChat.systemInstruction;
+        if (activeChat.personaId) {
+            const persona = personas.find(p => p.id === activeChat.personaId);
+            if (persona) systemInstruction = persona.instruction;
+        }
+
         updateChat(activeChatId, chat => ({ ...chat, messages: [...chat.messages, userMessage] }));
 
         if (imageToEdit) {
@@ -400,544 +501,594 @@ const App: React.FC = () => {
             return;
         }
 
-        // Use efficient, local intent classification instead of a slow API call
         if (isImageGenRequest(prompt)) {
             const cleanedPrompt = prompt.replace(/^\/(generate|draw|create|render|imagine|make|sketch|paint|illustrate)\s*/i, '').trim();
-            handleImageGeneration({
-                prompt: cleanedPrompt || prompt, // Fallback to original if cleaning results in empty string
-                model: settings.imageModel,
-                aspectRatio: '1:1',
-                numImages: numImages,
-                negativePrompt: ''
-            });
+            handleGenerateImageFromPrompt(cleanedPrompt || prompt, 4);
         } else {
-            // It's a text request
-            handleTextGeneration([...activeChat.messages, userMessage], activeChat.systemInstruction);
+            handleTextGeneration([...activeChat.messages, userMessage], systemInstruction);
         }
-    }, [activeChat, activeChatId, settings.imageModel, updateChat, handleImageGeneration, handleTextGeneration, handleChatImageGeneration]);
+    }, [activeChatId, activeChat, updateChat, handleChatImageGeneration, handleGenerateImageFromPrompt, handleTextGeneration, personas]);
     
-    const handleStoryGeneration = useCallback(async (userPrompt: string) => {
+    const handleContinueStory = useCallback(async (userPrompt: string) => {
         if (!activeStorySessionId || !activeStorySession) return;
-
-        setIsGenerating(true);
+        setIsStoryGenerating(true);
         abortControllerRef.current = new AbortController();
         const signal = abortControllerRef.current.signal;
 
-        const isNewStory = activeStorySession.beats.length === 0;
-
-        if (isNewStory) {
-            updateStorySession(activeStorySessionId, session => ({
-                ...session,
-                premise: userPrompt,
-                title: userPrompt.substring(0, 40) || 'New Story',
-                beats: [],
-            }));
-        }
+        const textLoadingBeat: StoryBeat = {
+            id: `temp-text-loading-${Date.now()}`,
+            storyText: 'The AI is writing the next chapter...',
+            imageUrl: '',
+            imagePrompt: '',
+            userPrompt: userPrompt,
+            isGenerating: true,
+        };
+        
+        updateStorySession(activeStorySessionId, session => ({ ...session, beats: [...session.beats, textLoadingBeat] }));
 
         try {
-            const history = activeStorySession.beats;
-            const premise = activeStorySession.premise || userPrompt;
+            const continuations = await generateStoryContinuation(
+                activeStorySession.premise,
+                activeStorySession.beats,
+                userPrompt,
+                settings.textModel,
+                activeStorySession.characterDescription,
+                signal
+            );
             
-            const scenes = await generateStoryContinuation(premise, history, userPrompt, settings.textModel, signal);
-            if (signal.aborted) throw new Error('Aborted');
-
-            // Create all loading beats first
-            const loadingBeats: StoryBeat[] = scenes.map(scene => ({
-                id: `loading-${Date.now()}-${Math.random()}`,
-                userPrompt: userPrompt,
-                storyText: scene.storyText,
-                imagePrompt: scene.imagePrompt,
+            if (signal.aborted) throw new Error("Cancelled");
+            
+            // Replace loading beat with actual new beats
+            const newBeats = continuations.map(c => ({
+                id: `beat-${Date.now()}-${Math.random()}`,
+                storyText: c.storyText,
+                imagePrompt: c.imagePrompt,
                 imageUrl: '',
+                userPrompt: userPrompt,
                 isGenerating: true,
             }));
-            
-            updateStorySession(activeStorySessionId, session => ({ ...session, beats: [...session.beats, ...loadingBeats] }));
 
-            // Sequentially generate images to avoid overwhelming the API
-            for (const beat of loadingBeats) {
-                if (signal.aborted) break;
-                try {
-                    const imageUrl = getImageUrl(beat.imagePrompt, { model: 'turbo', safe: false, aspectRatio: '3:4' });
-                    
-                    // Preload image
-                    const img = new Image();
-                    img.src = imageUrl;
-                    await img.decode();
-                    if (signal.aborted) break;
+            updateStorySession(activeStorySessionId, session => ({
+                ...session,
+                beats: [...session.beats.filter(b => !b.id.startsWith('temp-')), ...newBeats]
+            }));
 
-                    updateStorySession(activeStorySessionId, session => ({
-                        ...session,
-                        beats: session.beats.map(b =>
-                            b.id === beat.id
-                                ? { ...b, imageUrl, isGenerating: false, id: `beat-${Date.now()}-${Math.random()}` }
-                                : b
-                        )
-                    }));
-                } catch (imgError) {
-                    if (signal.aborted) break;
-                    console.error(`Failed to generate image for beat '${beat.storyText}':`, imgError);
-                    updateStorySession(activeStorySessionId, session => ({
-                        ...session,
-                        beats: session.beats.map(b =>
-                            b.id === beat.id ? { ...b, isGenerating: false, storyText: `${b.storyText}\n\n(Image generation failed)` } : b
-                        )
-                    }));
-                }
-            }
+            // Generate images concurrently
+            newBeats.forEach(beat => {
+                if (signal.aborted) return;
+                const imageUrl = getImageUrl(beat.imagePrompt, { model: settings.imageModel, aspectRatio: '3:4', safe: true });
+                updateStorySession(activeStorySessionId, session => ({
+                    ...session,
+                    beats: session.beats.map(b => b.id === beat.id ? { ...b, imageUrl, isGenerating: false } : b)
+                }));
+            });
 
         } catch (error) {
             const friendlyError = handleFriendlyError(error, settings.textModel);
-            addToast(`Story generation failed: ${friendlyError}`, 'error');
-        } finally {
-            if (!signal.aborted) {
-                setIsGenerating(false);
-                abortControllerRef.current = null;
-            }
-        }
-    }, [activeStorySessionId, activeStorySession, updateStorySession, settings.textModel, addToast]);
-    
-    const handleStartStory = (premise: string) => {
-        handleStoryGeneration(premise);
-    };
-
-    const handleContinueStory = (prompt: string) => {
-        handleStoryGeneration(prompt);
-    };
-
-    const handleOpenStoryImageViewer = useCallback((beatId: string) => {
-        if (!activeStorySession) return;
-        
-        const allStoryImages: ViewerImage[] = activeStorySession.beats
-            .filter(beat => beat.imageUrl)
-            .map(beat => ({
-                url: beat.imageUrl,
-                config: {
-                    prompt: beat.imagePrompt,
-                    model: settings.imageModel, // Use default as a fallback
-                    aspectRatio: '3:4',
-                    negativePrompt: '',
-                    numImages: 1,
-                    seed: undefined
-                }
+            addToast(friendlyError, 'error');
+            updateStorySession(activeStorySessionId, session => ({
+                ...session,
+                beats: session.beats.filter(b => !b.id.startsWith('temp-text-loading-'))
             }));
-        
-        const currentBeat = activeStorySession.beats.find(b => b.id === beatId);
-        if (!currentBeat) return;
-        
-        const startIndex = allStoryImages.findIndex(img => img.url === currentBeat.imageUrl);
-        
-        if (startIndex !== -1) {
-            setViewingImages({ images: allStoryImages, startIndex });
+        } finally {
+            setIsStoryGenerating(false);
         }
-    }, [activeStorySession, settings.imageModel]);
-
-    const handleCheckModels = useCallback(async () => {
-        setIsCheckingModels(true);
-        setModelStatus(prev => {
-            const next = {...prev};
-            textModels.forEach(m => next[m] = 'checking');
-            imageModels.forEach(m => next[m] = 'checking');
-            return next;
-        });
-
-        const controller = new AbortController();
-        const textPromises = textModels.map(model => 
-            checkModelStatus(model, controller.signal).then(status => ({ model, status }))
-        );
-        const imagePromises = imageModels.map(model =>
-            checkImageModelStatus(model, controller.signal).then(status => ({ model, status }))
-        );
-
-        const results = await Promise.all([...textPromises, ...imagePromises]);
-
-        setModelStatus(prev => {
-            const next = {...prev};
-            results.forEach(({model, status}) => {
-                next[model] = status;
-            });
-            return next;
-        });
-
-        setIsCheckingModels(false);
-    }, [textModels, imageModels, setModelStatus]);
+    }, [activeStorySessionId, activeStorySession, settings.textModel, settings.imageModel, updateStorySession, addToast]);
     
-    const handleToggleMessageFavorite = useCallback((messageId: string) => {
-        if (!activeChatId) return;
-        updateChat(activeChatId, chat => ({
-            ...chat,
-            messages: chat.messages.map(m => m.id === messageId ? {...m, isFavorited: !m.isFavorited} : m)
-        }));
-        triggerHapticFeedback('light');
-    }, [activeChatId, updateChat]);
-
-    const handleContinueGeneration = useCallback((messageId: string) => {
-        if (!activeChatId || !activeChat) return;
-        const message = activeChat.messages.find(m => m.id === messageId);
-        if (!message || typeof message.content !== 'string') return;
+     const handleStartStory = useCallback(async (premise: string) => {
+        if (!activeStorySessionId) return;
         
-        const history = activeChat.messages.slice(0, activeChat.messages.findIndex(m => m.id === messageId) + 1);
-        const systemInstruction = `Continue generating from the last assistant message.`;
-        handleTextGeneration(history, systemInstruction);
+        setIsStoryGenerating(true);
+        abortControllerRef.current = new AbortController();
+        const signal = abortControllerRef.current.signal;
 
-    }, [activeChat, activeChatId, handleTextGeneration]);
+        updateStorySession(activeStorySessionId, session => ({...session, premise, beats: [] }));
+
+        const textLoadingBeat: StoryBeat = {
+            id: `temp-text-loading-${Date.now()}`,
+            storyText: 'The AI is crafting the opening scenes...',
+            imageUrl: '',
+            imagePrompt: '',
+            userPrompt: premise,
+            isGenerating: true,
+        };
+        updateStorySession(activeStorySessionId, session => ({ ...session, beats: [textLoadingBeat] }));
+
+        try {
+            addToast("Generating character description...", "info");
+            const characterDescription = await generateCharacterDescription(premise, settings.textModel, signal);
+            if (signal.aborted) throw new Error("Cancelled");
+            updateStorySession(activeStorySessionId, session => ({ ...session, characterDescription }));
+            addToast("Character created! Generating opening scenes...", "success");
+
+            const initialBeatsData = await generateStoryContinuation(
+                premise, [], "Start the story.", settings.textModel, characterDescription, signal
+            );
+
+            if (signal.aborted) throw new Error("Cancelled");
+            
+            const newBeats = initialBeatsData.map(c => ({
+                id: `beat-${Date.now()}-${Math.random()}`,
+                storyText: c.storyText,
+                imagePrompt: c.imagePrompt,
+                imageUrl: '',
+                userPrompt: premise,
+                isGenerating: true,
+            }));
+
+            updateStorySession(activeStorySessionId, session => ({ ...session, beats: newBeats })); 
+
+            // Generate images concurrently
+            newBeats.forEach(beat => {
+                if (signal.aborted) return;
+                const imageUrl = getImageUrl(beat.imagePrompt, { model: settings.imageModel, aspectRatio: '3:4', safe: true });
+                updateStorySession(activeStorySessionId, session => ({
+                    ...session,
+                    beats: session.beats.map(b => b.id === beat.id ? { ...b, imageUrl, isGenerating: false } : b)
+                }));
+            });
+
+        } catch (error) {
+            const friendlyError = handleFriendlyError(error, settings.textModel);
+            addToast(friendlyError, 'error');
+            updateStorySession(activeStorySessionId, session => ({ ...session, beats: [] })); // Clear text loading beat on error
+        } finally {
+            setIsStoryGenerating(false);
+        }
+    }, [activeStorySessionId, settings.textModel, settings.imageModel, addToast, updateStorySession]);
 
     const handleRefineMessage = useCallback(async (messageId: string, option: RefineOption) => {
-        if (!activeChatId || !activeChat) return;
-        const message = activeChat.messages.find(m => m.id === messageId);
-        if (!message || typeof message.content !== 'string') return;
+        if (!activeChatId) return;
+        const chat = chatSessions.find(s => s.id === activeChatId);
+        if (!chat) return;
 
-        const systemInstruction = `You are a text refiner. Your task is to rewrite the following text to be ${option}. Only output the refined text, without any conversational filler or labels.`;
-        const history: Message[] = [{ role: 'user', type: 'text', id: 'refine-req', content: message.content as string }];
+        const messageIndex = chat.messages.findIndex(m => m.id === messageId);
+        if (messageIndex === -1) return;
+        const originalMessage = chat.messages[messageIndex];
+        const historyUpToMessage = chat.messages.slice(0, messageIndex);
+
+        if (originalMessage.type !== 'text' || typeof originalMessage.content !== 'string') return;
         
-        // Temporarily update the message to show it's being worked on
-        updateChat(activeChatId, chat => ({
-            ...chat,
-            messages: chat.messages.map(m => m.id === messageId ? { ...m, type: 'loading', content: `Refining to be ${option}...` } : m)
-        }));
+        if (option === 'copy') {
+            if (typeof originalMessage.content === 'string') {
+                try {
+                    await navigator.clipboard.writeText(originalMessage.content);
+                    addToast("Copied to clipboard!", "success");
+                } catch (err) { addToast("Failed to copy.", "error"); }
+            }
+            return;
+        }
 
+        setIsChatGenerating(true);
+        abortControllerRef.current = new AbortController();
+
+        const tempLoadingId = `bot-loading-${Date.now()}`;
+        const tempMessage: Message = { id: tempLoadingId, role: 'bot', type: 'loading', content: `Refining...` };
+        
+        updateChat(activeChatId, c => ({ ...c, messages: c.messages.map(m => m.id === messageId ? tempMessage : m) }));
+
+        const refinementInstruction = `Refine the last response to be ${option}. Do not add any conversational filler, just output the refined text.`;
+        const refinementMessage: Message = { id: 'refine-req', role: 'user', type: 'text', content: refinementInstruction };
+        const historyForRefinement = [...historyUpToMessage, originalMessage, refinementMessage];
+        
         try {
-            const refinedText = await generateText(history, settings.textModel, systemInstruction);
-            // Replace the original message with the refined content
-            updateChat(activeChatId, chat => ({
-                ...chat,
-                messages: chat.messages.map(m => m.id === messageId ? { ...m, type: 'text', content: refinedText } : m)
+            const refinedContent = await generateText(historyForRefinement, settings.textModel, chat.systemInstruction, abortControllerRef.current.signal);
+            updateChat(activeChatId, c => ({
+                ...c,
+                messages: c.messages.map(m => m.id === tempLoadingId ? { ...originalMessage, id: `bot-ref-${Date.now()}`, content: refinedContent } : m)
             }));
         } catch (error) {
             const friendlyError = handleFriendlyError(error, settings.textModel);
-            addToast(`Could not refine text: ${friendlyError}`, 'error');
-            // Revert on error
-            updateChat(activeChatId, chat => ({
-                ...chat,
-                messages: chat.messages.map(m => m.id === messageId ? message : m)
-            }));
+            updateChat(activeChatId, c => ({...c, messages: c.messages.map(m => m.id === tempLoadingId ? originalMessage : m) }));
+            addToast(`Refinement failed: ${friendlyError}`, 'error');
+        } finally {
+            setIsChatGenerating(false);
         }
+    }, [activeChatId, chatSessions, updateChat, addToast, settings.textModel]);
 
-    }, [activeChat, activeChatId, settings.textModel, updateChat, addToast]);
+    const handleContinueGeneration = useCallback(async (messageId: string) => {
+        if (!activeChatId || !activeChat) return;
+        const messageIndex = activeChat.messages.findIndex(m => m.id === messageId);
+        if (messageIndex === -1) return;
 
-    const handleShareMessage = useCallback(async (messageId: string) => {
-        if (!activeChat) return;
-        const message = activeChat.messages.find(m => m.id === messageId);
-        if (!message || typeof message.content !== 'string') return;
+        const history = activeChat.messages.slice(0, messageIndex + 1);
+        
+        let systemInstruction = activeChat.systemInstruction;
+        if (activeChat.personaId) {
+            const persona = personas.find(p => p.id === activeChat.personaId);
+            if (persona) systemInstruction = persona.instruction;
+        }
+        
+        handleTextGeneration(history, systemInstruction);
+    }, [activeChatId, activeChat, personas, handleTextGeneration]);
 
-        const shareData = {
-            title: 'SHIGEN Chat Message',
-            text: message.content,
-        };
+    const handleToggleFavoriteMessage = (message: Message) => {
+        if (!activeChatId) return;
+        updateChat(activeChatId, chat => ({
+            ...chat,
+            messages: chat.messages.map(m => m.id === message.id ? { ...m, isFavorited: !m.isFavorited } : m)
+        }));
+    };
 
+    const handleToggleFavoriteStoryBeat = (beatToToggle: StoryBeat) => {
+        if (!activeStorySessionId) return;
+        updateStorySession(activeStorySessionId, session => ({
+            ...session,
+            beats: session.beats.map(beat => 
+                beat.id === beatToToggle.id ? { ...beat, isFavorited: !beat.isFavorited } : beat
+            )
+        }));
+    };
+
+    const handleShareMessage = async (messageId: string) => {
+        const message = activeChat?.messages.find(m => m.id === messageId);
+        if (!message || message.type !== 'text' || typeof message.content !== 'string') return;
         if (navigator.share) {
             try {
-                await navigator.share(shareData);
-                addToast('Message shared!', 'success');
-            } catch (err) {
-                console.error('Share failed:', err);
+                await navigator.share({ title: 'SHIGEN Chat', text: message.content });
+            } catch (error) { console.error('Error sharing:', error); }
+        } else { addToast('Sharing is not supported on this browser.', 'info'); }
+    };
+    
+    const handleDeleteSession = (id: string, type: ViewMode) => {
+        if (type === 'chat') {
+            setChatSessions(prev => prev.filter(s => s.id !== id));
+            if (activeChatId === id) setActiveChatId(chatSessions.length > 1 ? chatSessions.find(s => s.id !== id)!.id : null);
+        } else if (type === 'image-generator') {
+            setImageSessions(prev => prev.filter(s => s.id !== id));
+            if (activeImageSessionId === id) setActiveImageSessionId(imageSessions.length > 1 ? imageSessions.find(s => s.id !== id)!.id : null);
+        } else if (type === 'story') {
+            setStorySessions(prev => prev.filter(s => s.id !== id));
+            if (activeStorySessionId === id) setActiveStorySessionId(storySessions.length > 1 ? storySessions.find(s => s.id !== id)!.id : null);
+        }
+    };
+
+    const handleToggleFavoriteImage = (image: FavoriteImage) => {
+        setFavoritedImages(prev => {
+            const isFav = prev.some(f => f.url === image.url);
+            return isFav ? prev.filter(f => f.url !== image.url) : [image, ...prev];
+        });
+        triggerHapticFeedback('light');
+    };
+
+    const handleToggleFavorite = (item: FavoriteItem) => {
+        if (item.type === 'image') {
+            handleToggleFavoriteImage(item);
+        } else if (item.type === 'message') {
+            const session = chatSessions.find(s => s.id === item.sessionId);
+            if (session) {
+                const message = session.messages.find(m => m.id === item.id);
+                if (message) handleToggleFavoriteMessage(message);
             }
-        } else {
-            try {
-                await navigator.clipboard.writeText(message.content);
-                addToast('Message content copied to clipboard!', 'success');
-            } catch (err) {
-                addToast('Could not copy text to clipboard.', 'error');
+        } else if (item.type === 'story-beat') {
+            const session = storySessions.find(s => s.id === item.sessionId);
+            if (session) {
+                const beat = session.beats.find(b => b.id === item.id);
+                if (beat) handleToggleFavoriteStoryBeat(beat);
             }
         }
-    }, [activeChat, addToast]);
-
-    const handleGenerateAudioForMessage = useCallback(async (messageId: string) => {
-        if (!activeChat || !audioPlayerRef.current) return;
-        const message = activeChat.messages.find(m => m.id === messageId);
-
-        if (!message || typeof message.content !== 'string' || message.content.trim().length === 0) return;
-        
-        if (currentlyPlayingMessageId === messageId) {
-            audioPlayerRef.current.pause();
-            setCurrentlyPlayingMessageId(null);
-            return;
-        }
-        
-        // Stop any other audio that might be playing to prevent overlap
-        audioPlayerRef.current.pause();
-
-        setCurrentlyPlayingMessageId(messageId);
-        updateChat(activeChatId!, chat => ({ ...chat, messages: chat.messages.map(m => m.id === messageId ? { ...m, isGeneratingAudio: true } : m)}));
-
-        try {
-            const audioUrl = getAudioUrl(message.content, settings.audioModel, settings.audioVoice);
-            audioPlayerRef.current.src = audioUrl;
-            await audioPlayerRef.current.play();
-            updateChat(activeChatId!, chat => ({...chat, messages: chat.messages.map(m => m.id === messageId ? { ...m, isGeneratingAudio: false } : m)}));
-        } catch (error) {
-            addToast("Couldn't play audio.", 'error');
-            updateChat(activeChatId!, chat => ({...chat, messages: chat.messages.map(m => m.id === messageId ? { ...m, isGeneratingAudio: false } : m)}));
-            setCurrentlyPlayingMessageId(null);
-        }
-
-    }, [activeChat, activeChatId, currentlyPlayingMessageId, settings.audioModel, settings.audioVoice, addToast, updateChat]);
-
-    const handleReEdit = (config: ImageGenConfig) => {
+    };
+    
+    const handleReEditImage = (config: ImageGenConfig) => {
         setReEditRequest(config);
         setViewMode('image-generator');
-        onCloseAllModals();
-    };
-
-    const handleToggleFavorite = (image: FavoriteImage) => {
-        setFavoritedImages(prev => {
-            if (prev.some(fav => fav.url === image.url)) {
-                return prev.filter(fav => fav.url !== image.url);
-            } else {
-                return [...prev, image];
-            }
-        });
-    };
-    
-    const onCloseAllModals = () => {
-        setSettingsOpen(false);
-        setInstructionModalOpen(false);
-        setImageFeedOpen(false);
-        setTextFeedOpen(false);
-        setFavoritesOpen(false);
         setViewingImages(null);
-        setThemeGeneratorOpen(false);
-    };
-
-    const handleSettingsChange = (newSettings: Settings) => {
-      // If the theme is being changed to a standard one, clear any custom AI theme styles
-      if (settings.theme !== newSettings.theme) {
-          document.body.style.cssText = '';
-          setCustomUserDp(null);
-      }
-      setSettings(newSettings);
-    };
-
-    const handleDeleteChat = (id: string) => {
-        const remaining = chatSessions.filter(c => c.id !== id);
-        setChatSessions(remaining);
-        if (activeChatId === id) {
-            setActiveChatId(remaining.length > 0 ? remaining[0].id : null);
-        }
+        setFavoritesOpen(false);
     };
     
-    const handleDeleteImageSession = (id: string) => {
-        const remaining = imageSessions.filter(s => s.id !== id);
-        setImageSessions(remaining);
-        if (activeImageSessionId === id) {
-            setActiveImageSessionId(remaining.length > 0 ? remaining[0].id : null);
-        }
-    };
+    const handleCheckModels = useCallback(async () => {
+        setIsCheckingModels(true);
+        const controller = new AbortController();
+        const signal = controller.signal;
+        
+        const textModelsToCheck = textModels.filter(m => modelStatus[m] !== 'available');
+        const imageModelsToCheck = imageModels.filter(m => modelStatus[m] !== 'available');
 
-    const handleDeleteStorySession = (id: string) => {
-        const remaining = storySessions.filter(s => s.id !== id);
-        setStorySessions(remaining);
-        if (activeStorySessionId === id) {
-            setActiveStorySessionId(remaining.length > 0 ? remaining[0].id : null);
-        }
-    };
-    
-    const handleSetSystemInstruction = (instruction: string) => {
-        if (!activeChatId) return;
-        updateChat(activeChatId, chat => ({ ...chat, systemInstruction: instruction }));
-        setInstructionModalOpen(false);
-        addToast('Persona updated for this chat!', 'success');
-    };
-
-    const handleApplyAiTheme = (theme: GeneratedTheme) => {
-        const body = document.body;
-        // Clear all previous inline styles and classes
-        body.style.cssText = '';
-        body.className = '';
-
-        // Apply new theme colors
-        Object.entries(theme.colors).forEach(([key, value]) => {
-            body.style.setProperty(key, value);
+        const promises: Promise<void>[] = [];
+        
+        textModelsToCheck.forEach(model => {
+            setModelStatus(prev => ({ ...prev, [model]: 'checking' }));
+            promises.push(
+                checkModelStatus(model, signal).then(status => {
+                    if (!signal.aborted) setModelStatus(prev => ({...prev, [model]: status}));
+                })
+            );
+        });
+        
+        imageModelsToCheck.forEach(model => {
+            setModelStatus(prev => ({ ...prev, [model]: 'checking' }));
+            promises.push(
+                checkImageModelStatus(model, signal).then(status => {
+                     if (!signal.aborted) setModelStatus(prev => ({...prev, [model]: status}));
+                })
+            );
         });
 
-        // Apply new theme wallpaper
-        if (theme.wallpaperUrl) {
-            body.style.backgroundImage = `url('${theme.wallpaperUrl}')`;
-            body.style.backgroundSize = 'cover';
-            body.style.backgroundPosition = 'center';
-            body.style.backgroundAttachment = 'fixed';
-        }
+        await Promise.allSettled(promises);
+        setIsCheckingModels(false);
+    }, [textModels, imageModels, modelStatus, setModelStatus]);
+    
+    const handleApplyAiTheme = (theme: GeneratedTheme) => {
+        setSettings(s => ({...s, theme: 'dark', aiTheme: theme }));
         
-        setCustomUserDp(theme.userDpUrl ?? null);
+        if (theme.userDpUrl) setCustomUserDp(theme.userDpUrl);
 
-        addToast('Custom theme applied!', 'success');
-        onCloseAllModals();
+        Object.entries(theme.colors).forEach(([key, value]) => {
+            document.documentElement.style.setProperty(key, value);
+        });
+        if (theme.wallpaperUrl) {
+            document.documentElement.style.setProperty('--color-wallpaper', `url(${theme.wallpaperUrl})`);
+        } else {
+             document.documentElement.style.removeProperty('--color-wallpaper');
+        }
+        setThemeGeneratorOpen(false);
+        addToast(`Theme "${theme.name}" applied!`, 'success');
+    }
+    
+    useEffect(() => {
+        const themeToApply: Theme = settings.aiTheme ? 'dark' : settings.theme; // AI themes are based on dark
+        document.body.className = `theme-${themeToApply}`;
+        
+        if (settings.aiTheme) {
+            Object.entries(settings.aiTheme.colors).forEach(([key, value]) => {
+                document.documentElement.style.setProperty(key, value);
+            });
+            if (settings.aiTheme.wallpaperUrl) {
+                document.documentElement.style.setProperty('--color-wallpaper', `url(${settings.aiTheme.wallpaperUrl})`);
+            }
+        } else {
+             // Clear AI theme styles if it's not active
+            const themeColorKeys = ['--color-background', '--color-surface', '--color-surface-variant', '--color-primary', '--color-primary-container', '--color-secondary', '--color-outline', '--color-on-background', '--color-on-surface', '--color-on-surface-variant', '--color-on-primary', '--color-on-primary-container', '--color-on-secondary', '--color-shadow', '--color-wallpaper'];
+            themeColorKeys.forEach(key => document.documentElement.style.removeProperty(key));
+        }
+
+    }, [settings.theme, settings.aiTheme]);
+    
+    const handleUpdateStorySession = (updates: Partial<StorySession>) => {
+        if (activeStorySessionId) {
+            updateStorySession(activeStorySessionId, session => ({ ...session, ...updates}));
+        }
+    }
+    
+    const handleSetPersonaForChat = (personaId: string | null) => {
+        if (activeChatId) {
+            updateChat(activeChatId, chat => ({ ...chat, personaId, systemInstruction: '' })); // Clear old instruction
+        }
     };
 
-    useEffect(() => {
-        // This effect only applies standard themes. AI themes are applied via inline styles.
-        // It won't run if an AI theme is active because we clear the classname when applying it.
-        if (document.body.style.length === 0) {
-            document.body.className = `theme-${settings.theme}`;
-        }
-    }, [settings.theme]);
+    const handleGenerateAudioForMessage = useCallback(async (messageId: string) => {
+        if (!activeChatId) return;
+        const message = activeChat?.messages.find(m => m.id === messageId);
+        if (!message || message.type !== 'text' || typeof message.content !== 'string') return;
+        
+        updateChat(activeChatId, chat => ({
+            ...chat,
+            messages: chat.messages.map(m => m.id === messageId ? { ...m, isGeneratingAudio: true } : m)
+        }));
 
-    const renderView = () => {
+        try {
+            const audioUrl = await generateAudio(message.content);
+            updateChat(activeChatId, chat => ({
+                ...chat,
+                messages: chat.messages.map(m => m.id === messageId ? { ...m, isGeneratingAudio: false, audioUrl } : m)
+            }));
+            handleToggleAudio(messageId, audioUrl);
+        } catch (error) {
+            addToast('Failed to generate audio.', 'error');
+            updateChat(activeChatId, chat => ({
+                ...chat,
+                messages: chat.messages.map(m => m.id === messageId ? { ...m, isGeneratingAudio: false } : m)
+            }));
+        }
+    }, [activeChatId, activeChat, updateChat, addToast]);
+
+    const handleToggleAudio = (messageId: string, audioUrl: string) => {
+        if (currentlyPlayingMessageId === messageId && audioRef.current) {
+            if (isAudioPlaying) {
+                audioRef.current.pause();
+                setIsAudioPlaying(false);
+            } else {
+                audioRef.current.play();
+                setIsAudioPlaying(true);
+            }
+        } else {
+            if (audioRef.current) {
+                audioRef.current.pause();
+            }
+            const newAudio = new Audio(audioUrl);
+            audioRef.current = newAudio;
+            newAudio.play();
+            setIsAudioPlaying(true);
+            setCurrentlyPlayingMessageId(messageId);
+            newAudio.onended = () => {
+                setIsAudioPlaying(false);
+                setCurrentlyPlayingMessageId(null);
+            };
+        }
+    };
+    
+    const mainContent = useMemo(() => {
         switch (viewMode) {
             case 'chat':
-                return <ChatView
-                    chatSession={activeChat}
-                    onSendMessage={handleSendMessage}
-                    onOpenSidebar={() => setSidebarOpen(true)}
-                    onOpenInstructionEditor={() => setInstructionModalOpen(true)}
-                    isGenerating={isGenerating}
-                    onCancel={handleCancelGeneration}
-                    onImageSelect={setImageToModify}
-                    selectedImage={imageToModify}
-                    onToggleFavorite={handleToggleMessageFavorite}
-                    onContinue={handleContinueGeneration}
-                    onRefine={handleRefineMessage}
-                    onShare={handleShareMessage}
-                    promptFromFeed={promptFromFeed}
-                    isOnline={isOnline}
-                    onOpenViewer={(images, startIndex) => setViewingImages({ images, startIndex })}
-                    onGenerateAudioForMessage={handleGenerateAudioForMessage}
-                    onGenerateImageFromPrompt={handleGenerateImageFromPrompt}
-                    customUserDp={customUserDp}
-                />;
+                return <ChatView 
+                            chatSession={activeChat} 
+                            activePersona={activePersona}
+                            onSendMessage={handleSendMessage} 
+                            onOpenSidebar={() => {}} 
+                            onOpenChatSettings={() => setChatSettingsOpen(true)}
+                            isGenerating={isChatGenerating}
+                            onCancel={handleCancelGeneration}
+                            onImageSelect={setImageToModify}
+                            selectedImage={imageToModify}
+                            onToggleFavorite={handleToggleFavoriteMessage}
+                            onContinue={handleContinueGeneration}
+                            onRefine={handleRefineMessage}
+                            onShare={handleShareMessage}
+                            promptFromFeed={promptFromFeed}
+                            isOnline={isOnline}
+                            onOpenViewer={(images, startIndex) => setViewingImages({ images, startIndex })}
+                            onGenerateImageFromPrompt={handleGenerateImageFromPrompt}
+                            customUserDp={customUserDp}
+                            onGenerateAudioForMessage={handleGenerateAudioForMessage}
+                            onToggleAudio={handleToggleAudio}
+                            currentlyPlayingMessageId={currentlyPlayingMessageId}
+                            isAudioPlaying={isAudioPlaying}
+                        />;
             case 'image-generator':
-                return <ImageGeneratorView
-                    session={activeImageSession}
-                    defaultImageModel={settings.imageModel}
-                    imageModels={imageModels}
-                    isGenerating={isGenerating}
-                    onGenerate={handleImageGeneration}
-                    onCancel={handleCancelGeneration}
-                    onOpenSidebar={() => setSidebarOpen(true)}
-                    isOnline={isOnline}
-                    onOpenViewer={(images, startIndex) => setViewingImages({ images, startIndex })}
-                    favoritedImageUrls={favoritedImageUrls}
-                    reEditRequest={reEditRequest}
-                    onReEditRequestConsumed={() => setReEditRequest(null)}
-                    addToast={addToast}
-                    onReEdit={handleReEdit}
-                />;
+                return <ImageGeneratorView 
+                            session={activeImageSession} 
+                            defaultImageModel={settings.imageModel}
+                            imageModels={imageModels}
+                            isGenerating={isImageGenerating}
+                            pendingGeneration={pendingGeneration}
+                            onGenerate={(config) => activeImageSessionId && handleImageGeneration(config)}
+                            onCancel={handleCancelGeneration}
+                            onOpenSidebar={() => {}}
+                            isOnline={isOnline}
+                            onOpenViewer={(images, startIndex) => setViewingImages({ images, startIndex })}
+                            favoritedImageUrls={favoritedImageUrls}
+                            reEditRequest={reEditRequest}
+                            onReEditRequestConsumed={() => setReEditRequest(null)}
+                            addToast={addToast}
+                            onReEdit={handleReEditImage}
+                        />;
             case 'story':
-                return <StoryView
-                    session={activeStorySession}
-                    onStartStory={handleStartStory}
-                    onContinueStory={handleContinueStory}
-                    onOpenSidebar={() => setSidebarOpen(true)}
-                    isGenerating={isGenerating}
-                    onCancel={handleCancelGeneration}
-                    isOnline={isOnline}
-                    onOpenViewer={handleOpenStoryImageViewer}
-                />;
+                 return <StoryView 
+                             session={activeStorySession}
+                             onStartStory={handleStartStory}
+                             onContinueStory={handleContinueStory}
+                             onOpenSidebar={() => {}}
+                             isGenerating={isStoryGenerating}
+                             onCancel={handleCancelGeneration}
+                             isOnline={isOnline}
+                             onOpenViewer={(beatId) => {
+                                const allBeats = activeStorySession?.beats.filter(b => b.imageUrl) || [];
+                                const images = allBeats.map(b => ({ url: b.imageUrl, config: { prompt: b.imagePrompt, model: settings.imageModel, aspectRatio: '3:4', negativePrompt: '', numImages: 1 }}));
+                                const startIndex = allBeats.findIndex(b => b.id === beatId);
+                                if (startIndex !== -1) setViewingImages({ images, startIndex });
+                             }}
+                             onUpdateSession={handleUpdateStorySession}
+                             onToggleFavorite={handleToggleFavoriteStoryBeat}
+                         />;
             default:
                 return null;
         }
-    };
+    }, [
+        viewMode, activeChat, handleSendMessage, isChatGenerating, imageToModify, promptFromFeed, isOnline, 
+        activeImageSession, settings, imageModels, isImageGenerating, pendingGeneration, activeImageSessionId, handleImageGeneration,
+        activeStorySession, isStoryGenerating, handleStartStory, handleContinueStory,
+        textModels,
+        favoritedImageUrls, reEditRequest, addToast, handleReEditImage, handleRefineMessage, handleShareMessage, 
+        handleGenerateImageFromPrompt,
+        customUserDp,
+        activePersona, handleToggleFavoriteMessage, handleToggleFavoriteStoryBeat,
+        handleContinueGeneration, handleGenerateAudioForMessage, handleToggleAudio, currentlyPlayingMessageId, isAudioPlaying
+    ]);
 
     return (
-        <div className="flex h-screen w-screen overflow-hidden">
-            <Sidebar
-                isOpen={isSidebarOpen}
-                onClose={() => setSidebarOpen(false)}
-                viewMode={viewMode}
-                onViewChange={setViewMode}
-                chatSessions={chatSessions}
-                activeChatId={activeChatId}
-                onSelectChat={setActiveChatId}
-                onNewChat={createNewChat}
-                onDeleteChat={handleDeleteChat}
-                imageSessions={imageSessions}
-                activeImageSessionId={activeImageSessionId}
-                onSelectImageSession={setActiveImageSessionId}
-                onNewImageSession={createNewImageSession}
-                onDeleteImageSession={handleDeleteImageSession}
-                storySessions={storySessions}
-                activeStorySessionId={activeStorySessionId}
-                onSelectStorySession={setActiveStorySessionId}
-                onNewStorySession={createNewStorySession}
-                onDeleteStorySession={handleDeleteStorySession}
+        <div className="flex flex-col h-[100dvh] bg-background text-on-background font-sans overflow-hidden">
+            <div className="flex-1 flex flex-col relative overflow-hidden">
+                {mainContent}
+            </div>
+            <BottomNavBar activeView={viewMode} onViewChange={setViewMode} onMenuClick={() => setMenuOpen(true)}/>
+            
+            <MenuSheet
+                isOpen={isMenuOpen} 
+                onClose={() => setMenuOpen(false)}
+                history={unifiedHistory}
+                activeIds={{ chat: activeChatId, image: activeImageSessionId, story: activeStorySessionId }}
+                onSelectHistoryItem={handleSelectHistoryItem}
+                onNewSession={handleNewSession}
+                onDeleteSession={handleDeleteSession}
                 onOpenSettings={() => setSettingsOpen(true)}
                 onOpenImageFeed={() => setImageFeedOpen(true)}
                 onOpenTextFeed={() => setTextFeedOpen(true)}
-                favoritedImages={favoritedImages}
-                onOpenViewer={(images, startIndex) => setViewingImages({ images, startIndex })}
+                favorites={favorites}
                 onOpenFavorites={() => setFavoritesOpen(true)}
                 installStatus={installStatus}
                 onInstallPwa={handleInstallPwa}
             />
-
-            <main className="flex-1 flex flex-col min-w-0">
-                {renderView()}
-            </main>
-            
-            <SettingsModal
-                isOpen={isSettingsOpen}
+             {isSettingsOpen && <SettingsModal 
+                isOpen={isSettingsOpen} 
                 onClose={() => setSettingsOpen(false)}
                 settings={settings}
-                onSettingsChange={handleSettingsChange}
+                onSettingsChange={setSettings}
                 textModels={textModels}
                 imageModels={imageModels}
                 modelStatus={modelStatus}
                 onCheckModels={handleCheckModels}
                 isCheckingModels={isCheckingModels}
                 onOpenThemeGenerator={() => setThemeGeneratorOpen(true)}
-            />
-            
-            <SystemInstructionModal
-                isOpen={isInstructionModalOpen}
-                onClose={() => setInstructionModalOpen(false)}
-                currentInstruction={activeChat?.systemInstruction || ''}
-                onSave={handleSetSystemInstruction}
-            />
-
-            <ImageFeed 
-                isOpen={isImageFeedOpen}
-                onClose={() => setImageFeedOpen(false)}
+                onOpenPersonaManager={() => { setSettingsOpen(false); setPersonaManagerOpen(true); }}
+            />}
+            {isChatSettingsOpen && activeChat && <ChatSettingsModal
+                isOpen={isChatSettingsOpen}
+                onClose={() => setChatSettingsOpen(false)}
+                personas={personas}
+                activePersonaId={activeChat.personaId}
+                onSetPersona={handleSetPersonaForChat}
+                onOpenPersonaManager={() => { setChatSettingsOpen(false); setPersonaManagerOpen(true); }}
+            />}
+             {isPersonaManagerOpen && <PersonaManagerModal
+                isOpen={isPersonaManagerOpen}
+                onClose={() => setPersonaManagerOpen(false)}
+                personas={personas}
+                onUpdatePersonas={setPersonas}
+                addToast={addToast}
+            />}
+            {isImageFeedOpen && <ImageFeed 
+                isOpen={isImageFeedOpen} 
+                onClose={() => setImageFeedOpen(false)} 
                 onPromptSelect={(prompt) => {
-                    setViewMode('chat');
                     setPromptFromFeed({ prompt, timestamp: Date.now() });
                     setImageFeedOpen(false);
-                    setSidebarOpen(false);
+                    setViewMode('chat');
                 }}
-            />
-
-            <TextFeed 
+            />}
+            {isTextFeedOpen && <TextFeed 
                 isOpen={isTextFeedOpen}
                 onClose={() => setTextFeedOpen(false)}
                 onPromptSelect={(prompt) => {
-                    setViewMode('chat');
                     setPromptFromFeed({ prompt, timestamp: Date.now() });
                     setTextFeedOpen(false);
-                    setSidebarOpen(false);
+                    setViewMode('chat');
                 }}
-            />
-
-            {viewingImages && (
-                <ImageViewerModal
-                    isOpen={true}
-                    onClose={() => setViewingImages(null)}
-                    images={viewingImages.images}
-                    startIndex={viewingImages.startIndex}
-                    favoritedImageUrls={favoritedImageUrls}
-                    onToggleFavorite={handleToggleFavorite}
-                    onReEdit={handleReEdit}
-                />
-            )}
-            
-            <FavoritesViewModal
+            />}
+            {viewingImages && <ImageViewerModal 
+                isOpen={!!viewingImages}
+                onClose={() => setViewingImages(null)}
+                images={viewingImages.images}
+                startIndex={viewingImages.startIndex}
+                favoritedImageUrls={favoritedImageUrls}
+                onToggleFavorite={handleToggleFavoriteImage}
+                onReEdit={handleReEditImage}
+            />}
+            {isFavoritesOpen && <FavoritesViewModal 
                 isOpen={isFavoritesOpen}
                 onClose={() => setFavoritesOpen(false)}
-                favoritedImages={favoritedImages}
-                onOpenViewer={(startIndex) => setViewingImages({ images: favoritedImages, startIndex })}
+                favorites={favorites}
+                onOpenViewer={(startIndex) => {
+                    const viewerImages = favorites
+                        .filter((fav): fav is FavoriteImage => fav.type === 'image')
+                        .map(fav => ({ url: fav.url, config: fav.config }));
+                    setViewingImages({ images: viewerImages, startIndex });
+                }}
                 onToggleFavorite={handleToggleFavorite}
-                onReEdit={handleReEdit}
-            />
-
-            <ThemeGeneratorModal
-                isOpen={isThemeGeneratorOpen}
-                onClose={() => setThemeGeneratorOpen(false)}
-                onApplyTheme={handleApplyAiTheme}
-                addToast={addToast}
-            />
+                onReEdit={handleReEditImage}
+            />}
+            {isThemeGeneratorOpen && <ThemeGeneratorModal
+                 isOpen={isThemeGeneratorOpen}
+                 onClose={() => setThemeGeneratorOpen(false)}
+                 onApplyTheme={handleApplyAiTheme}
+                 addToast={addToast}
+                 textModel={settings.textModel}
+            />}
 
             <NotificationManager 
                 notifications={notifications} 
-                onDismiss={(id) => setNotifications(n => n.filter(toast => toast.id !== id))} 
+                onDismiss={(id) => setNotifications(n => n.filter(toast => toast.id !== id))}
             />
-
+            
             {showIosBanner && <IosInstallBanner onClose={() => setShowIosBanner(false)} />}
         </div>
     );
